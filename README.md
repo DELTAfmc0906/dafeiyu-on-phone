@@ -8,7 +8,8 @@
 
 | 版本 | 说明 | 文件 |
 |---|---|---|
-| **v1.3.1**（推荐） | **Material You 3 重做**两个界面；**按住说话重做为椭圆条**（波形 + 浮层修复）；**AI 设置独立成页** | `dist\dafeiyu-pet-v1.3.1-release.apk` |
+| **v1.3.2**（推荐） | **语音识别改用设备端离线通道**（不联网、不断连、延迟低）+ 复用识别器 + 瞬时错误重试 | `dist\dafeiyu-pet-v1.3.2-release.apk` |
+| v1.3.1 | Material You 3 重做两个界面；按住说话重做为椭圆条；AI 设置独立成页 | `dist\dafeiyu-pet-v1.3.1-release.apk` |
 | v1.2.5 | AI 去掉全部人设与字数限制（原汁原味大模型） | `dist\dafeiyu-pet-v1.2.5-release.apk` |
 | v1.2.4 | 修复 AI"只会说短句"（移除硬编码 25 字限制） | `dist\dafeiyu-pet-v1.2.4-release.apk` |
 | v1.2.3 | 修复 AI 回复 `nullnullnull...`；新增语音输入 | `dist\dafeiyu-pet-v1.2.3-release.apk` |
@@ -31,7 +32,7 @@ App 内「设置 → 更新」可检查新版本并跳转下载。
 
 ### 1. 安装 APK
 
-把 `dist\dafeiyu-pet-v1.3.1-release.apk` 拷到手机，点击安装。
+把 `dist\dafeiyu-pet-v1.3.2-release.apk` 拷到手机，点击安装。
 （首次安装需在系统里允许"安装未知来源应用"。）
 
 也可以直接从 GitHub Release 下载：

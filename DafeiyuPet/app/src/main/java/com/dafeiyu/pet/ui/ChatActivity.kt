@@ -148,6 +148,7 @@ class ChatActivity : AppCompatActivity() {
             },
             onClose = { finish() },
             voiceAutoSend = config.voiceAutoSend,
+            voicePreferOffline = config.voicePreferOffline,
             onRequestMicPermission = {
                 micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
             }

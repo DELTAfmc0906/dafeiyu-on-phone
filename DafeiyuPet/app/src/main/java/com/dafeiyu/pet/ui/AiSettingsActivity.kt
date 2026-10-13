@@ -316,10 +316,41 @@ class AiSettingsActivity : AppCompatActivity() {
                 .setOnCheckedChangeListener { _, on -> config.voiceAutoSend = on }
         })
 
+        // ---------- 离线识别（v1.3.2：解决"卡/断连"）----------
+        content.addView(m3.switchRow(
+            getString(R.string.voice_offline), config.voicePreferOffline,
+            getString(R.string.voice_offline_hint)
+        ).also { row ->
+            (row.tag as com.google.android.material.materialswitch.MaterialSwitch)
+                .setOnCheckedChangeListener { _, on -> config.voicePreferOffline = on }
+        })
+        // 把设备能力摊开写清楚，免得用户看到开关却不知道为什么没生效
+        content.addView(m3.hint(voiceCapabilityText()).apply {
+            setPadding(0, 0, 0, m3.dp(4))
+        })
+
         card.addView(content)
         return card
     }
 
+    /**
+     * 说明本机语音识别能力。
+     *
+     * 离线识别需要 Android 12+ 且系统已安装对应语言的离线识别包，
+     * 不是所有机器都有。把实际情况显示出来，比让用户猜要好。
+     */
+    private fun voiceCapabilityText(): String {
+        val v = com.dafeiyu.pet.ai.VoiceInput(this)
+        val offline = v.hasOnDevice()
+        val online = v.hasNetwork()
+        return when {
+            offline && online -> "本机支持离线识别 ✓（同时可用在线识别）"
+            offline -> "本机支持离线识别 ✓（在线识别不可用）"
+            online -> "本机不支持离线识别，只能用在线识别。" +
+                    "若经常断连，可在系统设置里下载「离线语音识别」语言包。"
+            else -> "本机没有可用的语音识别服务。"
+        }
+    }
     /**
      * Agent 模式占位。
      *

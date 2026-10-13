@@ -215,6 +215,17 @@ class VoiceOverlay(private val context: Context) {
         resultText?.text = text
     }
 
+    /**
+     * 状态说明（离线识别 / 在线识别 / 正在重试）。
+     *
+     * 放在提示行上，让用户能看出"卡住"到底卡在哪 ——
+     * 尤其是网络不稳时"正在重试"比一个转圈友好得多。
+     */
+    fun setStatus(text: String) {
+        if (cancelling) return
+        hintText?.text = text
+    }
+
     /** 真实音量 0..1（来自 onRmsChanged），驱动波形幅度 */
     fun setLevel(level: Float) {
         realLevel = level.coerceIn(0f, 1f)

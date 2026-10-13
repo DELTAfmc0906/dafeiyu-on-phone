@@ -52,6 +52,8 @@ class AiChatPanelView(
     private val onClose: () -> Unit,
     /** 语音识别完是否自动发送；false 则只填进输入框 */
     private val voiceAutoSend: Boolean = true,
+    /** 是否优先用设备端离线识别（解决"卡/断连"） */
+    private val voicePreferOffline: Boolean = true,
     /** 请求录音权限；由 Activity 转发 */
     private val onRequestMicPermission: (() -> Unit)? = null
 ) : LinearLayout(context) {
@@ -129,6 +131,9 @@ class AiChatPanelView(
         // M3：浮层本体用 surfaceContainerLow，靠色调与背后的内容分层
         setBackgroundColor(m3.surfaceContainerLow)
         voice = VoiceInput(context)
+        // 优先离线识别：音频不出本机，没有网络环节，因此不会断连、延迟也低。
+        // 这是解决"连接很卡、经常断连"的关键开关。
+        voice.preferOnDevice = voicePreferOffline
         build()
         rebuildMessages()
         refreshStatus()
@@ -528,6 +533,11 @@ class AiChatPanelView(
                  * UI 状态的唯一权威是**手指**，不是识别器。
                  */
                 pendingError = if (wasCancelling) null else message
+            }
+
+            override fun onStatus(text: String) {
+                // 显示"离线识别/在线识别/正在重试"，用户能看出卡在哪
+                voiceOverlay?.setStatus(text)
             }
 
             override fun onFinished() {

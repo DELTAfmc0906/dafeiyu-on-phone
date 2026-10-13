@@ -252,6 +252,19 @@ class ConfigRepo(context: Context) {
         get() = com.dafeiyu.pet.ai.AiClient.LengthLimit.from(sp.getString(KEY_AI_LENGTH, null))
         set(v) = sp.edit().putString(KEY_AI_LENGTH, v.key).apply()
 
+    /**
+     * 语音识别是否优先用**设备端离线识别**（v1.3.2 新增）。
+     *
+     * 默认开启，这是解决"连接卡、经常断连"的关键：
+     * 离线识别的音频不出本机，没有网络环节，因此不会断连、延迟也低。
+     *
+     * 但有些机型的离线中文识别准确率一般，所以留了退路 ——
+     * 关掉即改用云端识别。
+     */
+    var voicePreferOffline: Boolean
+        get() = sp.getBoolean(KEY_VOICE_PREFER_OFFLINE, true)
+        set(v) = sp.edit().putBoolean(KEY_VOICE_PREFER_OFFLINE, v).apply()
+
     /** 配置是否可用（有 Key 才算配好） */
     fun isAiConfigured(): Boolean = apiKey.isNotBlank()
 
@@ -302,6 +315,7 @@ class ConfigRepo(context: Context) {
         const val KEY_AI_ENABLED = "ai_enabled"
         const val KEY_AI_THINKING = "ai_thinking"
         const val KEY_VOICE_AUTO_SEND = "voice_auto_send"
+        const val KEY_VOICE_PREFER_OFFLINE = "voice_prefer_offline"
         const val KEY_AI_LENGTH = "ai_length_limit"
         const val DEFAULT_CITY = "汕头"
     }
