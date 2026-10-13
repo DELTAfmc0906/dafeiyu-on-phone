@@ -51,7 +51,8 @@ class SpriteLoader(context: Context) {
     private val pkg = context.packageName
 
     init {
-        // 预热全部 3 视图 x 4 档位 x 2 朝向 = 24 张，总共约 1.2 MB，代价可接受
+        // 预热全部 3 视图 x 4 档位 x 2 朝向 = 24 张，总共约 1.2 MB，代价可接受。
+        // 实测耗时约 83ms（模拟器），不值得为它做懒加载。
         for (v in Facing.View.entries) {
             for (h in availableHeights) {
                 load(v, h, mirrored = false)

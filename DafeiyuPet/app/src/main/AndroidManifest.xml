@@ -34,6 +34,14 @@
             </intent-filter>
         </activity>
 
+        <!-- AI 对话界面（v1.2.2 起改为 Activity，见 ChatActivity 注释） -->
+        <activity
+            android:name=".ui.ChatActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.DafeiyuPet.Chat" />
+
         <!-- 悬浮窗前台服务 -->
         <service
             android:name=".ui.PetService"

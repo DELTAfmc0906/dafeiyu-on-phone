@@ -26,4 +26,18 @@ object PetRuntime {
     @Volatile
     var settingsVisible: Boolean = false
         internal set
+
+    /**
+     * AI 对话界面是否在前台（v1.2.2 新增）。
+     *
+     * 由 [ChatActivity] 维护。服务据此让鱼触摸穿透 ——
+     * 否则鱼的悬浮窗会盖住对话界面底部的输入区，用户点输入框时点到的是鱼。
+     *
+     * 与 [settingsVisible] 分开而不是合并，是因为两者语义不同：
+     * 设置面板是"用户正在调参数"，对话界面是"用户正在打字"，
+     * 将来可能对它们做不同处理。
+     */
+    @Volatile
+    var chatVisible: Boolean = false
+        internal set
 }

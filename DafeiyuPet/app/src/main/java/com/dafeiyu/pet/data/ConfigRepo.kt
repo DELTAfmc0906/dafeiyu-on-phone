@@ -151,6 +151,21 @@ class ConfigRepo(context: Context) {
         get() = sp.getBoolean(KEY_INTERACTIVE, true)
         set(v) = sp.edit().putBoolean(KEY_INTERACTIVE, v).apply()
 
+    /**
+     * 强制可互动（v1.2.1 新增）。
+     *
+     * 背景：v1.1 为了避免"鱼太大挡住设置面板控件"，让鱼在 app 打开期间触摸穿透。
+     * 副作用是——只要 app 在前台，鱼就一直"看得见但摸不到"，
+     * 用户会以为它卡死了（实测确实能持续 50 秒以上）。
+     *
+     * 打开这个开关后，鱼在 app 打开期间也保持可互动。
+     * 代价是：如果鱼正好压在某个设置控件上，会挡到那个控件
+     * （把鱼拖开即可；或从通知栏临时切「摸不到它」）。
+     */
+    var forceInteractive: Boolean
+        get() = sp.getBoolean(KEY_FORCE_INTERACTIVE, false)
+        set(v) = sp.edit().putBoolean(KEY_FORCE_INTERACTIVE, v).apply()
+
     var autoStart: Boolean
         get() = sp.getBoolean(KEY_AUTOSTART, false)
         set(v) = sp.edit().putBoolean(KEY_AUTOSTART, v).apply()
@@ -239,6 +254,7 @@ class ConfigRepo(context: Context) {
         /** v1.0 的字符串档位键，只用于迁移读取 */
         const val KEY_SIZE = "size"
         const val KEY_INTERACTIVE = "interactive"
+        const val KEY_FORCE_INTERACTIVE = "force_interactive"
         const val KEY_AUTOSTART = "autostart"
         const val KEY_BATTERY = "battery_alert"
         const val KEY_CITY = "city"

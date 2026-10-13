@@ -6,8 +6,8 @@ plugins {
 }
 
 // ---------- 签名配置：从 key.properties 读取 ----------
-// 注意：这里必须 import java.util.Properties —— 直接写 java.util.Properties() 会失败，
-// 因为 Kotlin DSL 里 `java` 被 Gradle 的 java 扩展遮蔽了。
+// 注意：这里必须 import java.util.Properties。
+// 直接写 java.util.Properties() 会失败，因为 Kotlin DSL 里 `java` 被 Gradle 的 java 扩展遮蔽了。
 val keystorePropsFile = rootProject.file("key.properties")
 // 显式写类型：否则 Kotlin DSL 会对 Properties().apply{} 产生类型推断递归
 val keystoreProps: Properties = Properties()
@@ -33,8 +33,8 @@ android {
         applicationId = "com.dafeiyu.pet"
         minSdk = 26          // 悬浮窗 + 前台服务在 8.0 起才规范
         targetSdk = 36
-        versionCode = 3
-        versionName = "1.2"
+        versionCode = 5
+        versionName = "1.2.2"
     }
 
     signingConfigs {

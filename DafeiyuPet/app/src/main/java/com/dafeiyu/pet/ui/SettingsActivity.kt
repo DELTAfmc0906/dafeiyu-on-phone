@@ -2,6 +2,7 @@ package com.dafeiyu.pet.ui
 
 import android.Manifest
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -34,6 +35,8 @@ import com.dafeiyu.pet.data.ApiPreset
 import com.dafeiyu.pet.data.ConfigRepo
 import com.dafeiyu.pet.data.PetMode
 import com.dafeiyu.pet.data.PetSize
+import com.dafeiyu.pet.update.UpdateClient
+import com.dafeiyu.pet.update.UpdateInfo
 
 /**
  * 设置 / 控制面板。
@@ -50,6 +53,15 @@ class SettingsActivity : AppCompatActivity() {
     companion object {
         /** 打开设置页并要求滚动/聚焦到 AI 区（长按鱼身但没配 Key 时会带上） */
         const val EXTRA_FOCUS_API = "focus_api"
+
+        /** 供 ChatActivity 跳过来配 Key */
+        fun startForApi(context: android.content.Context) {
+            context.startActivity(
+                Intent(context, SettingsActivity::class.java)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                    .putExtra(EXTRA_FOCUS_API, true)
+            )
+        }
     }
 
     private lateinit var config: ConfigRepo
@@ -291,6 +303,20 @@ class SettingsActivity : AppCompatActivity() {
             PetService.reload(this)
         })
 
+        // v1.2.1：鱼在 app 前台期间是否也保持可互动
+        root.addView(checkBox(
+            getString(R.string.opt_force_interactive), config.forceInteractive
+        ) { on ->
+            config.forceInteractive = on
+            PetService.refreshTouchable(this)
+        })
+        root.addView(TextView(this).apply {
+            text = getString(R.string.opt_force_interactive_hint)
+            textSize = 11f
+            setTextColor(Color.GRAY)
+            setPadding(dp(28), 0, 0, dp(4))
+        })
+
         root.addView(checkBox(getString(R.string.opt_battery), config.batteryAlert) { on ->
             config.batteryAlert = on
             PetService.reload(this)
@@ -352,6 +378,9 @@ class SettingsActivity : AppCompatActivity() {
         val aiSection = buildAiSection()
         aiScrollTarget = aiSection
         root.addView(aiSection)
+
+        // ---------- 更新（v1.2.1）----------
+        root.addView(buildUpdateSection())
 
         // 关于
         root.addView(sectionTitle(getString(R.string.about)))
@@ -495,6 +524,148 @@ class SettingsActivity : AppCompatActivity() {
         text = t
         textSize = 14f
         setPadding(0, dp(10), 0, dp(2))
+    }
+
+    // =============================== 更新（v1.2.1）===============================
+
+    private var updateStatusText: TextView? = null
+
+    /**
+     * "更新"区。
+     *
+     * 只做「检查 + 跳转浏览器」，**不自动下载安装 APK**：
+     * Android 8+ 安装未知来源应用需要 REQUEST_INSTALL_PACKAGES 权限，
+     * 而且静默装包容易被安全软件拦、用户也不放心。把安装交给用户点一下更稳妥。
+     */
+    private fun buildUpdateSection(): View {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        box.addView(sectionTitle(getString(R.string.sec_update)))
+
+        val curVer = runCatching {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        }.getOrNull() ?: "?"
+
+        box.addView(TextView(this).apply {
+            text = getString(R.string.update_current, curVer)
+            textSize = 14f
+        })
+
+        updateStatusText = TextView(this).apply {
+            textSize = 13f
+            setTextColor(Color.GRAY)
+            setPadding(0, dp(6), 0, 0)
+        }
+        box.addView(updateStatusText)
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(8), 0, 0)
+        }
+        row.addView(Button(this).apply {
+            text = getString(R.string.update_check)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { marginEnd = dp(4) }
+            setOnClickListener { checkForUpdate() }
+        })
+        row.addView(Button(this).apply {
+            text = getString(R.string.update_open_github)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            setOnClickListener { openUrl(UpdateClient.repoUrl) }
+        })
+        box.addView(row)
+
+        box.addView(TextView(this).apply {
+            text = UpdateClient.repoUrl
+            textSize = 11f
+            setTextColor(Color.parseColor("#1565C0"))
+            setPadding(0, dp(6), 0, 0)
+            setOnClickListener { openUrl(UpdateClient.repoUrl) }
+        })
+
+        return box
+    }
+
+    private fun checkForUpdate() {
+        val status = updateStatusText ?: return
+        status.text = getString(R.string.update_checking)
+        status.setTextColor(Color.GRAY)
+        UpdateClient.clearCache()
+        UpdateClient.checkLatest(force = true) { result ->
+            result.onSuccess { info ->
+                val curVer = runCatching {
+                    packageManager.getPackageInfo(packageName, 0).versionName
+                }.getOrNull() ?: "0"
+                when {
+                    info == null -> {
+                        status.text = getString(R.string.update_none)
+                        status.setTextColor(Color.GRAY)
+                    }
+                    info.isNewerThan(curVer) -> {
+                        status.text = getString(R.string.update_available, info.version)
+                        status.setTextColor(Color.parseColor("#2E7D32"))
+                        showUpdateDialog(info)
+                    }
+                    else -> {
+                        status.text = getString(R.string.update_latest_ok)
+                        status.setTextColor(Color.parseColor("#2E7D32"))
+                    }
+                }
+            }.onFailure { e ->
+                status.text = getString(R.string.update_failed, e.message ?: "网络错误")
+                status.setTextColor(Color.parseColor("#C62828"))
+            }
+        }
+    }
+
+    /** 新版本弹窗：显示更新说明，提供"去下载"（跳 Release 页）*/
+    private fun showUpdateDialog(info: UpdateInfo) {
+        val density = resources.displayMetrics.density
+        fun dp(v: Int) = (v * density).toInt()
+
+        val notes = info.notes.trim().ifEmpty { "（该版本没有填写更新说明）" }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(12), dp(24), 0)
+        }
+        box.addView(TextView(this).apply {
+            text = info.title.ifBlank { "v${info.version}" }
+            textSize = 16f
+        })
+        box.addView(TextView(this).apply {
+            text = getString(R.string.update_notes_title)
+            textSize = 13f
+            setTextColor(Color.parseColor("#1565C0"))
+            setPadding(0, dp(12), 0, dp(4))
+        })
+        box.addView(ScrollView(this).apply {
+            addView(TextView(this@SettingsActivity).apply {
+                text = notes
+                textSize = 13f
+                setTextColor(Color.parseColor("#444444"))
+            })
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(200)
+            )
+        })
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(getString(R.string.update_available, info.version))
+            .setView(box)
+            .setPositiveButton(R.string.update_now) { _, _ ->
+                // 指向该 Release 页面；如果附带 APK 也可直链下载
+                openUrl(info.apkUrl ?: info.pageUrl)
+            }
+            .setNegativeButton(R.string.update_later, null)
+            .create()
+        dialog.show()
+    }
+
+    private fun openUrl(url: String) {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.onFailure {
+            toast("打不开浏览器：$url")
+        }
     }
 
     /** 按当前预设决定 base/model 是否可编辑，并同步提示语 */

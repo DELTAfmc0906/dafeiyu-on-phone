@@ -5,4 +5,23 @@
         <item name="colorPrimaryVariant">#0D47A1</item>
         <item name="colorSecondary">#00BFA5</item>
     </style>
+
+    <!--
+      AI 对话界面用的主题（v1.2.2）。
+
+      做成"贴底浮层"而不是全屏页面：
+        windowIsFloating  -> 真正浮起来，不铺满
+        windowBackground  -> 透明，露出下面的内容
+        backgroundDim     -> 轻微压暗背景，视觉上突出对话层
+      关键是它**仍然是一个真正的 Activity 窗口**，
+      所以输入法能正常建立 InputConnection（这正是悬浮窗做不到的）。
+    -->
+    <style name="Theme.DafeiyuPet.Chat" parent="Theme.MaterialComponents.DayNight.Dialog">
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">true</item>
+        <item name="android:windowSoftInputMode">adjustResize|stateVisible</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+    </style>
 </resources>

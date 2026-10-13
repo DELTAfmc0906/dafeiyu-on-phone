@@ -61,8 +61,7 @@ class PetService : Service(), PetEngine.Listener, PetView.GestureHost {
 
     // ---- v1.2 AI ----
     private lateinit var chatHistory: ChatHistoryStore
-    private var chatPanel: AiChatPanel? = null
-    /** 正在等 AI 回复 */
+    /** 正在等 AI 回复（气泡摘要用） */
     private var aiBusy = false
 
     /**
@@ -165,8 +164,10 @@ class PetService : Service(), PetEngine.Listener, PetView.GestureHost {
 
     override fun onDestroy() {
         PetRuntime.isRunning = false
-        chatPanel?.hide()
-        chatPanel = null
+        // 无条件清理浮层。
+        // v1.2.2 修：早期版本喂食面板不在 onDestroy 里清理，
+        // 停服务时可能留下一个没人管的悬浮窗持续吃掉触摸。
+        runCatching { FeedPanel.dismiss(windowManager) }
         uiHandler.removeCallbacks(frameRunnable)
         engine.stop()
         unregisterBatteryReceiver()
@@ -258,25 +259,50 @@ class PetService : Service(), PetEngine.Listener, PetView.GestureHost {
      *   1. 用户把「可互动」关掉了（等价 PC 版的鼠标穿透）
      *   2. 设置面板正开在前台 —— 否则鱼一大就盖住面板控件，想调小都点不到
      */
-    private fun shouldBeTouchable(): Boolean =
-        config.interactive && !PetRuntime.settingsVisible
+    /**
+     * 统一计算"现在鱼是否应该接收触摸"。
+     *
+     * 三种情况要求穿透：
+     *   1. 用户把「可互动」关掉了（等价 PC 版的鼠标穿透）
+     *   2. 设置面板正开在前台，且用户没有开「强制可互动」
+     *      —— 这是为了避免鱼太大挡住面板控件（v1.1 引入）
+     *
+     * 关于第 2 条：v1.1 无条件穿透，导致用户一打开 app 鱼就"摸不到"，
+     * 看起来像卡死（实测可长达 50 秒以上）。v1.2.1 加了 forceInteractive
+     * 开关让用户自己权衡。
+     */
+    private fun shouldBeTouchable(): Boolean {
+        if (!config.interactive) return false
+        if (config.forceInteractive) return true
+        return !PetRuntime.settingsVisible
+    }
 
     private fun applyInteractive() {
         val lp = layoutParams ?: return
         val v = petView ?: return
 
-        // 触摸穿透
-        lp.flags = if (shouldBeTouchable()) {
+        // 触摸穿透。
+        // 额外规则（v1.2.2 修）：设置面板或 AI 对话界面在前台时，鱼必须穿透，
+        // 否则它的悬浮窗会盖住下层界面的控件。
+        val touchable = shouldBeTouchable() && !PetRuntime.chatVisible
+        lp.flags = if (touchable) {
             lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         } else {
             lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
-        // 焦点：AI 对话面板打开时不能有 NOT_FOCUSABLE，否则输入法和文本焦点会被鱼抢走
-        lp.flags = if (chatPanel?.isShowing == true) {
-            lp.flags and WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE.inv()
-        } else {
-            lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-        }
+
+        // 焦点：鱼窗口**永远**保持 NOT_FOCUSABLE。
+        //
+        // v1.2/v1.2.1 曾在这里"面板打开时去掉 NOT_FOCUSABLE"，那是错的：
+        // 同一时刻只能有一个窗口持有输入焦点，鱼一旦变成可聚焦就会跟 AI 面板抢，
+        // 结果是输入法连不上面板（键盘弹不出来）；
+        // 更糟的是面板关闭后鱼仍处于可聚焦状态，把输入焦点一直攥着不放，
+        // 表现为整个手机界面点不动，只能重启。
+        //
+        // 面板要拿焦点，应该由面板自己 requestFocus + 显式 showSoftInput，
+        // 配合它自己的 FLAG_ALT_FOCUSABLE_IM，不需要鱼让出 NOT_FOCUSABLE。
+        lp.flags = lp.flags or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+
         runCatching { windowManager.updateViewLayout(v, lp) }
     }
 
@@ -343,92 +369,30 @@ class PetService : Service(), PetEngine.Listener, PetView.GestureHost {
         }
     }
 
-    // =============================== AI 对话（v1.2）===============================
+    // =============================== AI 对话（v1.2 起，v1.2.2 改为 Activity）===============================
 
     /**
-     * 打开 AI 对话面板。
+     * 打开 AI 对话。
      *
-     * 首次使用（没配 Key）时**仍然弹出面板**，在面板里提示去设置，
-     * 而不是直接跳走 —— 这样用户明确知道"长按是干嘛的"，
-     * 也能看到面板长什么样，不会一脸茫然地被切到设置页。
+     * v1.2.2 起改为启动 [ChatActivity]，而不是自己 addView 一个悬浮窗。
+     * 原因见 ChatActivity 的类注释：悬浮窗拿不到输入法的 InputConnection
+     * （键盘弹出来但打字进不去），而且脱离 Activity 生命周期容易残留成
+     * "吃掉全局触摸"的孤儿窗口。
+     *
+     * 首次使用（没配 Key）时仍然打开对话界面，在里面给可点提示，
+     * 而不是直接跳设置页 —— 用户得先知道"长按"是干什么的。
      */
     private fun openAiChat() {
         if (!config.aiEnabled) {
             engine.say("AI 对话关掉了，去设置里打开")
             return
         }
-
-        if (chatPanel?.isShowing == true) {
-            chatPanel?.hide()
-            applyInteractive()
-            return
-        }
-
-        val panel = AiChatPanel(
-            context = this,
-            windowManager = windowManager,
-            history = chatHistory,
-            onSend = { text -> sendToAi(text) },
-            onOpenSettings = {
-                startActivity(
-                    Intent(this, SettingsActivity::class.java)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        .putExtra(SettingsActivity.EXTRA_FOCUS_API, true)
-                )
-            }
-        )
-        chatPanel = panel
-        panel.show()
         config.apiKeyPrompted = true
-
-        // 没配 Key 时直接在面板里给出可点的提示，引导去设置
-        if (!config.isAiConfigured()) {
-            panel.onError("还没设置 API Key，点这里去设置")
-        }
+        // 对话界面是真正的 Activity 窗口，会被系统置顶；
+        // 鱼在这个窗口打开期间要触摸穿透，避免挡住输入区。
+        PetRuntime.chatVisible = true
         applyInteractive()
-    }
-
-    private fun sendToAi(userText: String) {
-        if (aiBusy) return
-        aiBusy = true
-        // 对话期间鱼不移动，但呼吸/摇摆照常（对应原程序的 chat_paused）
-        engine.onDragStart()
-
-        val historySnapshot = chatHistory.forRequest().dropLast(1) // 最后一条是刚加进去的用户消息
-        AiClient.ask(
-            baseUrl = config.apiBaseUrl,
-            apiKey = config.apiKey,
-            model = config.apiModel,
-            history = historySnapshot,
-            userText = userText,
-            callback = object : AiClient.Callback {
-                override fun onDelta(text: String) {
-                    chatPanel?.onDelta(text)
-                }
-
-                override fun onComplete(text: String) {
-                    aiBusy = false
-                    // 对话结束，解除"暂停移动"
-                    engine.onDragEnd()
-                    chatPanel?.onComplete(text)
-                    // 让鱼同时用气泡说一句（截短，气泡放不下长文）
-                    engine.say(shortForBubble(text))
-                }
-
-                override fun onError(message: String) {
-                    aiBusy = false
-                    engine.onDragEnd()
-                    chatPanel?.onError(message)
-                    engine.say(message)
-                }
-            }
-        )
-    }
-
-    /** 气泡排版空间有限，长回复只取开头一小段 */
-    private fun shortForBubble(text: String): String {
-        val t = text.replace("\n", " ").trim()
-        return if (t.length <= 30) t else t.take(28) + "…"
+        ChatActivity.start(this)
     }
 
     // =============================== 电量 ===============================
