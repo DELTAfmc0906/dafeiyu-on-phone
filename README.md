@@ -9,7 +9,7 @@
 | 版本 | 说明 | 文件 |
 |---|---|---|
 | **v1.2.5**（推荐） | **AI 去掉全部人设与字数限制**（原汁原味大模型）；**重做按住说话**（波形 + 边说边出字 + 上滑取消） | `dist\dafeiyu-pet-v1.2.5-release.apk` |
-| v1.2.4 | 修复 AI"只会说短句"（移除硬编码 25 字限制） | `dist\dafeiyu-pet-v1.2.5-release.apk` |
+| v1.2.4 | 修复 AI"只会说短句"（移除硬编码 25 字限制） | `dist\dafeiyu-pet-v1.2.4-release.apk` |
 | v1.2.3 | 修复 AI 回复 `nullnullnull...`；新增语音输入 | `dist\dafeiyu-pet-v1.2.3-release.apk` |
 | v1.2.2 | 修 AI 对话键盘打不进字、退出后全局触摸被吃（改用 Activity） | `dist\dafeiyu-pet-v1.2.2-release.apk` |
 | v1.2.1 | 新增 GitHub 更新检查 + 「打开 app 时鱼也保持可互动」开关 | `dist\大肥鱼桌宠-v1.2.1-release.apk` |
