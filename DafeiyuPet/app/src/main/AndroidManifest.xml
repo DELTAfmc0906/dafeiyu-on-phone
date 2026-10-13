@@ -13,6 +13,18 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- 开机自启 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- 语音输入（按住说话）—— v1.2.3 新增，运行时申请 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
+    <!--
+      Android 11+ 的包可见性：不声明的话 SpeechRecognizer.isRecognitionAvailable()
+      会一直返回 false，语音功能直接不可用。
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <application
         android:allowBackup="true"

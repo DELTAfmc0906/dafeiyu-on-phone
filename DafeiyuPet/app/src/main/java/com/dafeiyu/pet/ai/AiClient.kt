@@ -41,7 +41,19 @@ object AiClient {
 
     private const val CONNECT_TIMEOUT_MS = 15_000
     private const val READ_TIMEOUT_MS = 60_000
-    private const val MAX_TOKENS = 200
+
+    /**
+     * 单次回复的 token 上限。
+     *
+     * **这里踩过一个坑**：原先设 200，结果 deepseek-flash 这类"带思考"的模型
+     * 会把额度全烧在 `reasoning_content` 上（实测一次五个字的请求思考了 73KB），
+     * 正文 `content` 始终为空，`finish_reason` 直接是 `length`。
+     * 所以如果开思考，必须给足额度。
+     */
+    private const val MAX_TOKENS = 2048
+
+    /** 关思考时可以小一些，省 token */
+    private const val MAX_TOKENS_NO_THINK = 600
 
     /** 对话历史上限，与原程序一致 */
     const val MAX_HISTORY = 40
@@ -75,8 +87,13 @@ object AiClient {
 
     /** 回调。全部回主线程。 */
     interface Callback {
-        /** 流式增量。可能被调用多次，每次是一小段新文字 */
+        /** 正文增量。可能被调用多次，每次是**到目前为止的全文** */
         fun onDelta(text: String)
+        /**
+         * 思考过程增量（带思考的模型才有，如 deepseek-flash）。
+         * 默认空实现，不需要展示思考的实现可以不重写。
+         */
+        fun onThinking(text: String) {}
         /** 正常结束，text 是完整回复 */
         fun onComplete(text: String)
         /** 失败，message 是可以直接冒泡给用户看的中文短语 */
@@ -91,6 +108,9 @@ object AiClient {
      * @param model   形如 `deepseek-flash`
      * @param history 之前的对话（不含本条），会按 [MAX_HISTORY] 截断
      * @param userText 用户这次说的话
+     * @param enableThinking 是否开启模型的思考（思维链）。
+     *        开启后思考内容走 `onThinking`，正文走 `onDelta`；
+     *        关闭可显著降低 token 消耗与延迟（实测响应体积差 50 倍）。
      */
     fun ask(
         baseUrl: String,
@@ -98,6 +118,7 @@ object AiClient {
         model: String,
         history: List<ChatMessage>,
         userText: String,
+        enableThinking: Boolean = false,
         callback: Callback
     ) {
         val endpoint = normalizeEndpoint(baseUrl)
@@ -130,9 +151,16 @@ object AiClient {
                 val payload = JSONObject().apply {
                     put("model", model)
                     put("messages", messages)
-                    put("max_tokens", MAX_TOKENS)
+                    put("max_tokens", if (enableThinking) MAX_TOKENS else MAX_TOKENS_NO_THINK)
                     put("temperature", 0.9)
                     put("stream", true)
+                    // DeepSeek 的思考开关。不开的话模型会把 token 全烧在
+                    // reasoning_content 上，正文字段一直是空的（见 MAX_TOKENS 注释）。
+                    if (enableThinking) {
+                        put("thinking", JSONObject().put("type", "enabled"))
+                    } else {
+                        put("thinking", JSONObject().put("type", "disabled"))
+                    }
                 }
 
                 conn = (URL(endpoint).openConnection() as HttpURLConnection).apply {
@@ -155,8 +183,11 @@ object AiClient {
                 }
 
                 // ---- 解析 SSE ----
-                val sb = StringBuilder()
+                val contentBuf = StringBuilder()
+                val thinkBuf = StringBuilder()
                 var sawContent = false
+                var finishReason: String? = null
+
                 BufferedReader(conn.inputStream.reader(Charsets.UTF_8)).use { reader ->
                     var line: String?
                     while (reader.readLine().also { line = it } != null) {
@@ -165,17 +196,35 @@ object AiClient {
                         val data = l.removePrefix("data:").trim()
                         if (data == "[DONE]") break
                         try {
-                            val delta = JSONObject(data)
+                            val choice = JSONObject(data)
                                 .optJSONArray("choices")
-                                ?.optJSONObject(0)
-                                ?.optJSONObject("delta")
-                                ?.optString("content")
-                                .orEmpty()
-                            if (delta.isNotEmpty()) {
+                                ?.optJSONObject(0) ?: continue
+                            choice.optStringOrNull("finish_reason")
+                                ?.takeIf { it.isNotEmpty() }
+                                ?.let { finishReason = it }
+                            val delta = choice.optJSONObject("delta") ?: continue
+
+                            // ★ 关键修复：
+                            // 之前写 .optString("content")，而 org.json 的 optString
+                            // 遇到 JSON 的 null 值会返回**字符串 "null"**（它只判断 key
+                            // 存不存在，不做空值判断）。流式响应里正文帧长这样：
+                            //     {"delta":{"content":null,"reasoning_content":"..."}}
+                            // 于是每帧都往气泡追加一个字面量 "null"，
+                            // 用户看到的就是一大串 "nullnullnull..."。
+                            // 必须用 optStringOrNull 区分 null 与空串。
+                            val c = delta.optStringOrNull("content")
+                            if (!c.isNullOrEmpty()) {
                                 sawContent = true
-                                sb.append(delta)
-                                val snapshot = sb.toString()
+                                contentBuf.append(c)
+                                val snapshot = contentBuf.toString()
                                 post { callback.onDelta(snapshot) }
+                            }
+                            // 思考过程单独回调（带思考的模型才有）
+                            val r = delta.optStringOrNull("reasoning_content")
+                            if (!r.isNullOrEmpty()) {
+                                thinkBuf.append(r)
+                                val snapshot = thinkBuf.toString()
+                                post { callback.onThinking(snapshot) }
                             }
                         } catch (_: Exception) {
                             // 单行解析失败不该中断整个流
@@ -183,13 +232,26 @@ object AiClient {
                     }
                 }
 
-                // 有些兼容服务不支持 stream，会一次性返回完整 JSON；
-                // 那种情况下上面读不到 data: 行，这里兜底认为失败并提示。
-                if (!sawContent && sb.isEmpty()) {
-                    post { callback.onError("接口没有返回内容（可能不支持 stream）") }
-                } else {
-                    val full = sb.toString().trim()
-                    post { callback.onComplete(full) }
+                // 收尾判定。三种情况：
+                //   1. 有正文       -> 正常完成
+                //   2. 没正文但有思考 -> 说明 token 全被思考吃掉了（或模型只回思考），
+                //                       明确告诉用户，而不是丢一个空气泡
+                //   3. 什么都没有     -> 接口可能不支持 stream
+                val full = contentBuf.toString().trim()
+                val think = thinkBuf.toString().trim()
+                when {
+                    full.isNotEmpty() -> {
+                        if (finishReason == "length") {
+                            post { callback.onComplete(full) }
+                            post { callback.onError("回复被长度限制截断了，可在设置里关掉思考") }
+                        } else {
+                            post { callback.onComplete(full) }
+                        }
+                    }
+                    think.isNotEmpty() -> post {
+                        callback.onError("模型只输出了思考、没有正文（token 不够），试试关掉思考")
+                    }
+                    else -> post { callback.onError("接口没有返回内容（可能不支持 stream）") }
                 }
             } catch (e: java.net.SocketTimeoutException) {
                 post { callback.onError("请求超时，检查网络") }
@@ -203,6 +265,19 @@ object AiClient {
                 runCatching { conn?.disconnect() }
             }
         }
+    }
+
+    /**
+     * 读取字符串字段，**能区分 JSON null 与空串**。
+     *
+     * 为什么不能直接用 `optString`：org.json 的 `optString(key)` 在 key 存在、
+     * 但值是 JSON `null` 时会返回**字符串 "null"**（它只判断 key 在不在）。
+     * 流式响应里正文帧就是 `{"content":null,...}`，于是每帧都追加一个
+     * 字面量 "null"，用户看到的就是 `nullnullnull...`。这是 v1.2.2 的实际 bug。
+     */
+    private fun JSONObject.optStringOrNull(key: String): String? {
+        if (!has(key) || isNull(key)) return null
+        return optString(key, "")
     }
 
     /** 把 HTTP 错误码翻译成用户看得懂的中文短语（并尽量带上服务端原因） */

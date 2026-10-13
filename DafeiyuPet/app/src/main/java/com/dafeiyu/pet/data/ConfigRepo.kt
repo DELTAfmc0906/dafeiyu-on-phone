@@ -221,6 +221,26 @@ class ConfigRepo(context: Context) {
         get() = sp.getBoolean(KEY_AI_ENABLED, true)
         set(v) = sp.edit().putBoolean(KEY_AI_ENABLED, v).apply()
 
+    /**
+     * 是否开启模型的思考（思维链）。
+     *
+     * 默认**关闭**，原因（实测数据）：
+     *   - 开：一次五个字的请求产生 81KB 响应，思考烧掉大量 token，
+     *         200 token 上限能让正文完全为空
+     *   - 关：同样请求只有 1.5KB，响应快、便宜
+     *
+     * 喜欢看鱼"思考"的过程可以打开 —— 思考内容会以灰色斜体气泡显示，
+     * 正好呼应原 Python 版的「思维链心声」。
+     */
+    var aiThinking: Boolean
+        get() = sp.getBoolean(KEY_AI_THINKING, false)
+        set(v) = sp.edit().putBoolean(KEY_AI_THINKING, v).apply()
+
+    /** 语音识别：识别完是否自动发送（false 则只填进输入框） */
+    var voiceAutoSend: Boolean
+        get() = sp.getBoolean(KEY_VOICE_AUTO_SEND, true)
+        set(v) = sp.edit().putBoolean(KEY_VOICE_AUTO_SEND, v).apply()
+
     /** 配置是否可用（有 Key 才算配好） */
     fun isAiConfigured(): Boolean = apiKey.isNotBlank()
 
@@ -269,6 +289,8 @@ class ConfigRepo(context: Context) {
         const val KEY_API_PROMPTED = "api_key_prompted"
         const val KEY_CHAT_HISTORY = "chat_history"
         const val KEY_AI_ENABLED = "ai_enabled"
+        const val KEY_AI_THINKING = "ai_thinking"
+        const val KEY_VOICE_AUTO_SEND = "voice_auto_send"
         const val DEFAULT_CITY = "汕头"
     }
 }

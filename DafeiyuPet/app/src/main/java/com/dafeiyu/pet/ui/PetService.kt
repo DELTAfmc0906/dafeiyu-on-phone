@@ -137,6 +137,11 @@ class PetService : Service(), PetEngine.Listener, PetView.GestureHost {
                 // 覆盖成面板自己以为的值，从而抹掉用户刚做的选择。
                 applyInteractive()
             }
+            ACTION_SAY -> {
+                // 让鱼用气泡说一句（由对话界面转发 AI 回复）
+                val text = intent.getStringExtra(EXTRA_SAY_TEXT).orEmpty()
+                engine.say(shortForBubble(text))
+            }
             ACTION_RELOAD_CONFIG -> {
                 engine.mode = config.mode
                 engine.sizePercent = config.sizePercent
@@ -395,6 +400,12 @@ class PetService : Service(), PetEngine.Listener, PetView.GestureHost {
         ChatActivity.start(this)
     }
 
+    /** 气泡排版空间有限，长回复只取开头一小段 */
+    private fun shortForBubble(text: String): String {
+        val t = text.replace("\n", " ").trim()
+        return if (t.length <= 30) t else t.take(28) + "…"
+    }
+
     // =============================== 电量 ===============================
 
     private fun registerBatteryReceiver() {
@@ -503,6 +514,8 @@ class PetService : Service(), PetEngine.Listener, PetView.GestureHost {
         const val ACTION_STOP = "com.dafeiyu.pet.STOP"
         const val ACTION_RELOAD_CONFIG = "com.dafeiyu.pet.RELOAD_CONFIG"
         const val ACTION_WEATHER = "com.dafeiyu.pet.WEATHER"
+        const val ACTION_SAY = "com.dafeiyu.pet.SAY"
+        const val EXTRA_SAY_TEXT = "say_text"
         const val EXTRA_CITY = "city"
         const val EXTRA_TOUCHABLE = "touchable"
 
@@ -560,6 +573,23 @@ class PetService : Service(), PetEngine.Listener, PetView.GestureHost {
             startCompat(
                 context,
                 Intent(context, PetService::class.java).setAction(ACTION_REFRESH_TOUCHABLE)
+            )
+        }
+
+        /**
+         * 让桌宠用气泡说一句（v1.2.3 新增）。
+         *
+         * 对话界面是独立 Activity，不能直接操作桌宠的引擎，
+         * 所以通过服务转达。用于 AI 回复完后让鱼也"说一句"，
+         * 保留原 Python 版的桌宠存在感。
+         */
+        fun say(context: Context, text: String) {
+            if (text.isBlank()) return
+            startCompat(
+                context,
+                Intent(context, PetService::class.java)
+                    .setAction(ACTION_SAY)
+                    .putExtra(EXTRA_SAY_TEXT, text)
             )
         }
 

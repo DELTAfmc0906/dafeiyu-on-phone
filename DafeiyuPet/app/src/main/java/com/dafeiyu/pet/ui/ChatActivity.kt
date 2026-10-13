@@ -1,6 +1,6 @@
 package com.dafeiyu.pet.ui
 
-import android.app.Activity
+import android.Manifest
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -11,6 +11,8 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
 import com.dafeiyu.pet.ai.AiClient
 import com.dafeiyu.pet.ai.ChatHistoryStore
 import com.dafeiyu.pet.data.ConfigRepo
@@ -38,7 +40,9 @@ import com.dafeiyu.pet.data.ConfigRepo
  * Android 原生支持"透明浮层 Activity"（`Theme.Dialog` + 半透明背景），
  * 既保留悬浮观感，又有正常的窗口令牌和生命周期。
  */
-class ChatActivity : Activity() {
+// 必须继承 AppCompatActivity（而不是 android.app.Activity）：
+// registerForActivityResult 是 ComponentActivity 的能力，普通 Activity 没有。
+class ChatActivity : AppCompatActivity() {
 
     companion object {
         private const val EXTRA_FOCUS_INPUT = "focus_input"
@@ -61,13 +65,27 @@ class ChatActivity : Activity() {
             panel?.onDelta(text)
         }
 
+        override fun onThinking(text: String) {
+            panel?.onThinking(text)
+        }
+
         override fun onComplete(text: String) {
             panel?.onComplete(text)
+            // 让桌宠也用气泡说一句（转发给服务）。
+            // 对话界面改成 Activity 后不能直接操作引擎，所以走 Intent。
+            PetService.say(this@ChatActivity, text)
         }
 
         override fun onError(message: String) {
             panel?.onError(message)
         }
+    }
+
+    /** 请求录音权限的结果回调 */
+    private val micPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        panel?.onMicPermissionResult(granted)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -107,7 +125,11 @@ class ChatActivity : Activity() {
                 SettingsActivity.startForApi(this)
                 finish()
             },
-            onClose = { finish() }
+            onClose = { finish() },
+            voiceAutoSend = config.voiceAutoSend,
+            onRequestMicPermission = {
+                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            }
         )
         panel = view
         rootHolder.addView(
@@ -172,6 +194,7 @@ class ChatActivity : Activity() {
             model = config.apiModel,
             history = snapshot,
             userText = userText,
+            enableThinking = config.aiThinking,
             callback = aiCallback
         )
     }
@@ -199,6 +222,8 @@ class ChatActivity : Activity() {
 
     override fun onDestroy() {
         PetRuntime.chatVisible = false
+        // 必须释放麦克风，否则会一直占着录音设备
+        panel?.release()
         panel = null
         super.onDestroy()
     }

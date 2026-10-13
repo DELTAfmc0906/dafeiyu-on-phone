@@ -24,6 +24,10 @@
     <string name="ai_hint_deepseek">DeepSeek 预设已自动填好地址和模型，只需填 Key。</string>
     <string name="ai_hint_custom">填任意 OpenAI 兼容服务的地址与模型（通义/智谱/Kimi/本地 ollama 等）。</string>
     <string name="ai_history_count">当前对话记录：%1$d 条（最多保留 40 条）</string>
+    <string name="ai_thinking">显示思考过程（思维链）</string>
+    <string name="ai_thinking_hint">开启后模型的思考会以灰色斜体气泡显示。注意：思考很耗 token 且明显变慢（实测响应体积差 50 倍），默认关闭。</string>
+    <string name="voice_auto_send">语音识别后自动发送</string>
+    <string name="voice_auto_send_hint">关闭则只把识别结果填进输入框，由你确认后再发送。</string>
 
     <string name="grant_overlay">授予悬浮窗权限</string>
     <string name="grant_overlay_done">悬浮窗权限已授予 ✓</string>

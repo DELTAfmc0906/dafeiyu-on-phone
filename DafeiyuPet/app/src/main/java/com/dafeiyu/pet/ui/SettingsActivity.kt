@@ -470,6 +470,30 @@ class SettingsActivity : AppCompatActivity() {
         }
         box.addView(aiModelEdit)
 
+        box.addView(checkBox(
+            getString(R.string.ai_thinking), config.aiThinking
+        ) { on ->
+            config.aiThinking = on
+        })
+        box.addView(TextView(this).apply {
+            text = getString(R.string.ai_thinking_hint)
+            textSize = 11f
+            setTextColor(Color.GRAY)
+            setPadding(dp(28), 0, 0, dp(4))
+        })
+
+        box.addView(checkBox(
+            getString(R.string.voice_auto_send), config.voiceAutoSend
+        ) { on ->
+            config.voiceAutoSend = on
+        })
+        box.addView(TextView(this).apply {
+            text = getString(R.string.voice_auto_send_hint)
+            textSize = 11f
+            setTextColor(Color.GRAY)
+            setPadding(dp(28), 0, 0, dp(6))
+        })
+
         // 提示
         aiHintText = TextView(this).apply {
             textSize = 12f
