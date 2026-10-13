@@ -60,6 +60,9 @@ class ChatActivity : AppCompatActivity() {
     private lateinit var history: ChatHistoryStore
     private var panel: AiChatPanelView? = null
 
+    /** M3 颜色角色（v1.3） */
+    private val m3 by lazy { M3ViewFactory(this) }
+
     private val aiCallback = object : AiClient.Callback {
         override fun onDelta(text: String) {
             panel?.onDelta(text)
@@ -100,10 +103,15 @@ class ChatActivity : AppCompatActivity() {
         // 做成"贴底浮层"而不是全屏 Activity：
         //   - 背景透明 + 底部对齐 + 宽 94%，观感与之前的悬浮面板一致
         //   - 无标题栏，不占系统栏
+        // 窗口背景保持透明，面板本体（AiChatPanelView）自带
+        // surfaceContainerLow 底色 + 圆角，这样浮层是一块干净的卡片。
+        //
+        // 注意：**面板本体必须不透明**。之前深色模式下背景偏透，
+        // 后面的设置页会隐约透上来，观感很脏。
         window.apply {
             setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
             addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND)
-            attributes = attributes.apply { dimAmount = 0.25f }
+            attributes = attributes.apply { dimAmount = 0.32f }
             setLayout(
                 (resources.displayMetrics.widthPixels * 0.94f).toInt(),
                 (resources.displayMetrics.heightPixels * 0.62f).toInt()
@@ -116,13 +124,26 @@ class ChatActivity : AppCompatActivity() {
             )
         }
 
-        val rootHolder = FrameLayout(this)
+        // 容器也铺一层不透明底色并加 M3 的大圆角（L 档 16dp）。
+        // 双保险：即使面板内部某块背景没设色，也不会透出后面的界面。
+        val rootHolder = FrameLayout(this).apply {
+            setBackgroundColor(m3.surfaceContainerLow)
+            outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+            clipToOutline = true
+        }
+        rootHolder.background = android.graphics.drawable.GradientDrawable().apply {
+            cornerRadius = m3.dpf(16)
+            setColor(m3.surfaceContainerLow)
+        }
         val view = AiChatPanelView(
             context = this,
             history = history,
             onSend = { text -> sendToAi(text) },
             onOpenSettings = {
-                SettingsActivity.startForApi(this)
+                // ⚙ 齿轮直达"AI 与账号"页。
+                // 原来跳的是主设置页，而 AI 配置在那页的最深处，
+                // 用户得手动滑很久 —— 这也是"设置被吃掉了"的观感来源。
+                AiSettingsActivity.start(this)
                 finish()
             },
             onClose = { finish() },
@@ -210,7 +231,9 @@ class ChatActivity : AppCompatActivity() {
      */
     override fun onPause() {
         PetRuntime.chatVisible = false
-        // 通知服务重算鱼窗口的触摸标记（复用已有的只刷新、不改配置的 action）
+        // 切后台时把语音浮层和录音一起收掉。
+        // 悬浮窗不随 Activity 隐藏，漏收就会停在屏幕上（上一版的 bug）。
+        panel?.cancelVoice()
         PetService.refreshTouchable(this)
         super.onPause()
     }

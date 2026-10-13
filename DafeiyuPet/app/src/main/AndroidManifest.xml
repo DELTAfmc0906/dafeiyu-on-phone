@@ -27,6 +27,7 @@
     </queries>
 
     <application
+        android:name=".DafeiyuApp"
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
@@ -53,6 +54,16 @@
             android:excludeFromRecents="true"
             android:launchMode="singleTop"
             android:theme="@style/Theme.DafeiyuPet.Chat" />
+
+        <!--
+          AI 与账号设置（v1.3.1）。
+          从对话窗口的 ⚙ 齿轮或主设置页的入口卡片进入。
+          独立成页是因为 v1.3 把它埋进设置页深处后，用户反馈"API 设置被吃掉了"。
+        -->
+        <activity
+            android:name=".ui.AiSettingsActivity"
+            android:exported="false"
+            android:label="AI 与账号" />
 
         <!-- 悬浮窗前台服务 -->
         <service

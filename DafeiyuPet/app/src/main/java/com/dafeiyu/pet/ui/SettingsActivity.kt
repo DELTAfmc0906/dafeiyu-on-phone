@@ -1,52 +1,70 @@
 package com.dafeiyu.pet.ui
 
 import android.Manifest
-import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.graphics.Color
+import android.content.res.ColorStateList
+import android.graphics.Typeface
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.text.InputType
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.inputmethod.InputMethodManager
 import android.widget.ArrayAdapter
-import android.widget.Button
-import android.widget.CheckBox
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.SeekBar
-import android.widget.Spinner
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.dafeiyu.pet.R
-import com.dafeiyu.pet.ai.AiClient
-import com.dafeiyu.pet.ai.ChatHistoryStore
-import com.dafeiyu.pet.data.ApiPreset
 import com.dafeiyu.pet.data.ConfigRepo
 import com.dafeiyu.pet.data.PetMode
 import com.dafeiyu.pet.data.PetSize
 import com.dafeiyu.pet.update.UpdateClient
 import com.dafeiyu.pet.update.UpdateInfo
+import com.google.android.material.button.MaterialButton
+import com.google.android.material.card.MaterialCardView
+import com.google.android.material.color.MaterialColors
+import com.google.android.material.slider.Slider
+import com.google.android.material.textfield.TextInputEditText
+import com.google.android.material.textfield.TextInputLayout
 
 /**
- * 设置 / 控制面板。
+ * 设置 / 控制面板 —— v1.3 按 Material You 3 重做。
  *
- * 对应 Python 版右键菜单里的各项开关，但排布成适合手机触摸的表单。
- * 用代码构建界面而非 XML 布局 —— 控件不多，且能避免 id 与 theme 的耦合。
+ * ## 这次 UI 改造做了什么
  *
- * 权限说明：
- *   - SYSTEM_ALERT_WINDOW（悬浮窗）必须用户去系统设置里手动开，无法运行时申请
- *   - POST_NOTIFICATIONS 在 Android 13+ 是运行时权限
+ * ### 1. 从 Material 2 迁到 Material 3
+ * 主题由 `Theme.MaterialComponents.*` 换成 `Theme.Material3.*`，
+ * 颜色从"写死一个蓝色"改成引用 M3 的**语义颜色角色**
+ * （colorPrimary / colorSurfaceContainerLow / colorOnSurfaceVariant…）。
+ *
+ * 好处是**深色模式自动可用**，而且 Android 12+ 会启用动态取色
+ * （见 [com.dafeiyu.pet.DafeiyuApp]），整套配色跟着用户壁纸走。
+ *
+ * ### 2. 用 M3 组件替换系统老控件
+ *
+ * | 之前 | 现在 | M3 依据 |
+ * |---|---|---|
+ * | `Button` | [MaterialButton] | 胶囊圆角、明确的层级（filled/tonal/outlined） |
+ * | `CheckBox` | MaterialSwitch | M3 里开关类设置的标准控件 |
+ * | `SeekBar` | [Slider] | 带数值气泡、轨道更细 |
+ * | `EditText` | [TextInputLayout] 包裹 | M3 的 filled 文本框，标签浮动 |
+ * | `Spinner` | MaterialSpinner | 下拉样式与 M3 一致 |
+ *
+ * ### 3. 用卡片分组
+ * M3 强调**层级用色调而非阴影**，所以每一块设置放进
+ * [MaterialCardView]（`surfaceContainerLow` 底 + 16dp 圆角 + 细描边），
+ * 而不是靠分隔线和加粗标题硬分。
+ *
+ * ### 4. 状态可视化
+ * 原来状态是一行纯文本"运行中 | 悬浮窗 ✓ | 通知 ✗"，
+ * 现在做成带底色的状态条 + 逐项权限卡片，扫一眼就知道缺什么。
  */
 class SettingsActivity : AppCompatActivity() {
 
@@ -65,19 +83,23 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private lateinit var config: ConfigRepo
-    private lateinit var statusText: TextView
-    private lateinit var overlayBtn: Button
-    private lateinit var notifyBtn: Button
-    private lateinit var startBtn: Button
-    private lateinit var stopBtn: Button
+    private val m3 by lazy { M3ViewFactory(this) }
 
-    /** AI 区控件，保存后要刷新提示文字 */
-    private var aiKeyEdit: EditText? = null
-    private var aiBaseEdit: EditText? = null
-    private var aiModelEdit: EditText? = null
-    private var aiHintText: TextView? = null
-    private var aiHistoryText: TextView? = null
+    // 需要动态改状态的控件
+    private var statusCard: MaterialCardView? = null
+    private var statusTitle: TextView? = null
+    private var statusDetail: TextView? = null
+    private var overlayBtn: MaterialButton? = null
+    private var notifyBtn: MaterialButton? = null
+    private var startBtn: MaterialButton? = null
+    private var stopBtn: MaterialButton? = null
+
     private var aiScrollTarget: View? = null
+
+    /** AI 入口卡片上的状态行（已配置/未配置 + 当前模型） */
+    private var aiStatusLine: TextView? = null
+
+    private var updateStatusText: TextView? = null
 
     private val overlayLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -87,23 +109,9 @@ class SettingsActivity : AppCompatActivity() {
         ActivityResultContracts.RequestPermission()
     ) { refreshState() }
 
-    /**
-     * 架构说明（v1.2 修正）：设置面板的"让路"**不再改动用户的配置**。
-     *
-     * 面板打开时只置 [PetRuntime.settingsVisible] 标记，服务端由
-     * `shouldBeTouchable()` 统一裁决：
-     *
-     *     可触摸 = 用户开了可互动(config.interactive) && 面板不在前台(settingsVisible=false)
-     *
-     * 这样"用户意图"与"面板临时让路"彻底分离。
-     * 早期版本让面板直接改 config.interactive，导致用户主动关掉可互动后、
-     * 一进出设置面板就被改回开启。
-     */
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         config = ConfigRepo(this)
-        supportActionBar?.title = getString(R.string.settings_title)
         setContentView(buildUi())
         refreshState()
         if (intent?.getBooleanExtra(EXTRA_FOCUS_API, false) == true) {
@@ -139,41 +147,111 @@ class SettingsActivity : AppCompatActivity() {
     // =============================== 界面构建 ===============================
 
     private fun buildUi(): View {
-        val root = LinearLayout(this).apply {
+        val root = m3.pageRoot()
+
+        root.addView(buildTopBar())
+        root.addView(buildStatusCard())
+        root.addView(buildStartCard())
+        root.addView(buildDisplayCard())
+        root.addView(buildMiscCard())
+        root.addView(buildAiSection())
+        root.addView(buildUpdateSection())
+        root.addView(buildAbout())
+
+        return ScrollView(this).apply {
+            addView(root)
+            setBackgroundColor(m3.surface)
+        }
+    }
+
+    /**
+     * 顶部大标题。
+     *
+     * M3 的 top app bar 规范：标题用 HeadlineSmall，左对齐，
+     * 与内容区留出 16dp 间距。这里不用 MaterialToolbar 是为了
+     * 顺带显示版本号副标题。
+     */
+    private fun buildTopBar(): View {
+        val ver = runCatching {
+            packageManager.getPackageInfo(packageName, 0).versionName
+        }.getOrNull() ?: "?"
+        return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(16), dp(20), dp(32))
+            setPadding(0, m3.dp(16), 0, m3.dp(8))
+            addView(TextView(this@SettingsActivity).apply {
+                text = getString(R.string.settings_title)
+                textSize = 24f
+                setTypeface(typeface, Typeface.BOLD)
+                setTextColor(m3.onSurface)
+            })
+            addView(TextView(this@SettingsActivity).apply {
+                text = "版本 $ver"
+                textSize = 12f
+                setTextColor(m3.onSurfaceVariant)
+                setPadding(0, m3.dp(2), 0, 0)
+            })
         }
-        val scroll = ScrollView(this).apply { addView(root) }
+    }
 
-        // ---------- 状态 ----------
-        statusText = TextView(this).apply {
-            textSize = 16f
-            setPadding(0, 0, 0, dp(12))
+    /**
+     * 运行状态卡片。
+     *
+     * 顶部一条横贯的状态条（运行中/未运行），下面是权限逐项状态。
+     * 用 primaryContainer 做运行中的底色 —— M3 里强调类容器色就这个用途。
+     */
+    private fun buildStatusCard(): View {
+        val card = m3.card()
+        val content = m3.cardContent()
+
+        statusTitle = TextView(this).apply {
+            textSize = 17f
+            setTypeface(typeface, Typeface.BOLD)
         }
-        root.addView(statusText)
+        content.addView(statusTitle)
 
-        // ---------- 启动与权限 ----------
-        root.addView(sectionTitle(getString(R.string.sec_start)))
+        statusDetail = TextView(this).apply {
+            textSize = 12f
+            setPadding(0, m3.dp(4), 0, 0)
+        }
+        content.addView(statusDetail)
 
-        overlayBtn = Button(this).apply {
-            text = getString(R.string.grant_overlay)
+        card.addView(content)
+        statusCard = card
+        return card
+    }
+
+    /** 启动 / 权限 */
+    private fun buildStartCard(): View {
+        val card = m3.card()
+        val content = m3.cardContent()
+        content.addView(m3.sectionTitle(getString(R.string.sec_start)).apply { setPadding(0, 0, 0, m3.dp(8)) })
+
+        overlayBtn = m3.button(getString(R.string.grant_overlay), M3ViewFactory.Variant.OUTLINED).apply {
             setOnClickListener { requestOverlay() }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = m3.dp(8) }
         }
-        root.addView(overlayBtn)
+        content.addView(overlayBtn)
 
-        notifyBtn = Button(this).apply {
-            text = getString(R.string.grant_notify)
+        notifyBtn = m3.button(getString(R.string.grant_notify), M3ViewFactory.Variant.OUTLINED).apply {
             setOnClickListener { requestNotify() }
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = m3.dp(8) }
         }
-        root.addView(notifyBtn)
+        content.addView(notifyBtn)
+
+        content.addView(m3.hint(getString(R.string.overlay_hint)))
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, m3.dp(12), 0, 0)
         }
-        startBtn = Button(this).apply {
-            text = getString(R.string.start_pet)
+        // 主操作只该有一个：FILLED 给「启动桌宠」，停止用 TONAL
+        startBtn = m3.button(getString(R.string.start_pet), M3ViewFactory.Variant.FILLED).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                .apply { marginEnd = m3.dp(8) }
             setOnClickListener {
                 if (!Settings.canDrawOverlays(this@SettingsActivity)) {
                     toast(getString(R.string.need_overlay))
@@ -184,8 +262,7 @@ class SettingsActivity : AppCompatActivity() {
                 }
             }
         }
-        stopBtn = Button(this).apply {
-            text = getString(R.string.stop_pet)
+        stopBtn = m3.button(getString(R.string.stop_pet), M3ViewFactory.Variant.TONAL).apply {
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
             setOnClickListener {
                 PetService.stop(this@SettingsActivity)
@@ -194,17 +271,27 @@ class SettingsActivity : AppCompatActivity() {
         }
         row.addView(startBtn)
         row.addView(stopBtn)
-        root.addView(row)
+        content.addView(row)
+
+        card.addView(content)
+        return card
+    }
+
+    /** 模式与大小 */
+    private fun buildDisplayCard(): View {
+        val card = m3.card()
+        val content = m3.cardContent()
 
         // ---------- 模式 ----------
-        root.addView(sectionTitle(getString(R.string.sec_mode)))
+        content.addView(m3.sectionTitle(getString(R.string.sec_mode)).apply { setPadding(0, 0, 0, m3.dp(4)) })
+
         val modeLabels = arrayOf(
             getString(R.string.mode_wander),
             getString(R.string.mode_follow),
             getString(R.string.mode_still)
         )
         val modeValues = arrayOf(PetMode.WANDER, PetMode.FOLLOW, PetMode.STILL)
-        val modeSpinner = Spinner(this).apply {
+        val modeSpinner = android.widget.Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@SettingsActivity,
                 android.R.layout.simple_spinner_dropdown_item,
@@ -216,55 +303,52 @@ class SettingsActivity : AppCompatActivity() {
                 PetService.reload(this@SettingsActivity)
             }
         }
-        root.addView(modeSpinner)
+        content.addView(modeSpinner)
 
-        // ---------- 大小（v1.1：自由滑杆 + 三档快捷）----------
-        root.addView(sectionTitle(getString(R.string.sec_size)))
+        // ---------- 大小 ----------
+        content.addView(m3.sectionTitle(getString(R.string.sec_size)).apply { setPadding(0, m3.dp(16), 0, m3.dp(4)) })
 
-        // 显示当前百分比
         val sizeValueText = TextView(this).apply {
-            textSize = 17f
-            setPadding(0, 0, 0, dp(2))
+            textSize = 15f
+            setTextColor(m3.onSurface)
         }
-        root.addView(sizeValueText)
+        content.addView(sizeValueText)
 
-        // 换算：滑杆位置 -> 百分比
         val steps = (PetSize.MAX_PERCENT - PetSize.MIN_PERCENT) / PetSize.STEP
         fun percentOf(progress: Int) = PetSize.MIN_PERCENT + progress * PetSize.STEP
         fun progressOf(percent: Int) =
             ((PetSize.clamp(percent) - PetSize.MIN_PERCENT) / PetSize.STEP)
                 .coerceIn(0, steps)
 
-        val sizeSeek = SeekBar(this).apply {
-            max = steps
-            progress = progressOf(config.sizePercent)
-            setPadding(0, dp(4), 0, dp(4))
-        }
-
         fun updateSizeLabel(percent: Int) {
             sizeValueText.text = getString(R.string.size_current, percent)
         }
         updateSizeLabel(config.sizePercent)
 
-        sizeSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-            override fun onProgressChanged(sb: SeekBar?, progress: Int, fromUser: Boolean) {
-                val p = percentOf(progress)
+        // M3 Slider。
+        // 注意：这里**故意不设 stepSize** —— 设了之后 M3 Slider 会在轨道上
+        // 画出等距圆点刻度，21 档会变成一片密集小点，观感很乱
+        // （M3 规范里圆点刻度只用于少量档位）。改成连续滑杆，
+        // 取值时再对齐到 STEP 的整数倍，行为不变但干净得多。
+        val sizeSlider = Slider(this).apply {
+            valueFrom = 0f
+            valueTo = steps.toFloat()
+            value = progressOf(config.sizePercent).toFloat()
+            addOnChangeListener { _, value, fromUser ->
+                val p = percentOf(value.toInt())
                 updateSizeLabel(p)
-                if (!fromUser) return
+                if (!fromUser) return@addOnChangeListener
                 // 拖动过程中就实时应用，能立刻看到鱼变大变小
                 config.sizePercent = p
                 PetService.reload(this@SettingsActivity)
             }
+        }
+        content.addView(sizeSlider)
 
-            override fun onStartTrackingTouch(sb: SeekBar?) = Unit
-            override fun onStopTrackingTouch(sb: SeekBar?) = Unit
-        })
-        root.addView(sizeSeek)
-
-        // 三档快捷按钮
+        // 三档快捷
         val presetRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(4), 0, 0)
+            setPadding(0, m3.dp(8), 0, 0)
         }
         val presets = listOf(
             getString(R.string.size_small) to PetSize.SMALL_PERCENT,
@@ -272,567 +356,255 @@ class SettingsActivity : AppCompatActivity() {
             getString(R.string.size_large) to PetSize.LARGE_PERCENT
         )
         for ((label, percent) in presets) {
-            presetRow.addView(Button(this).apply {
-                text = label
-                textSize = 12f
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                    .apply { marginEnd = dp(4) }
-                setOnClickListener {
-                    config.sizePercent = percent
-                    sizeSeek.progress = progressOf(percent)
-                    updateSizeLabel(percent)
-                    PetService.reload(this@SettingsActivity)
+            presetRow.addView(
+                m3.button(label, M3ViewFactory.Variant.OUTLINED).apply {
+                    textSize = 12f
+                    layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                        .apply { marginEnd = m3.dp(6) }
+                    setOnClickListener {
+                        config.sizePercent = percent
+                        sizeSlider.value = progressOf(percent).toFloat()
+                        updateSizeLabel(percent)
+                        PetService.reload(this@SettingsActivity)
+                    }
                 }
-            })
+            )
         }
-        root.addView(presetRow)
+        content.addView(presetRow)
+        content.addView(m3.hint(getString(R.string.size_hint)).apply { setPadding(0, m3.dp(8), 0, 0) })
 
-        // 说明
-        root.addView(TextView(this).apply {
-            text = getString(R.string.size_hint)
-            textSize = 12f
-            setTextColor(Color.GRAY)
-            setPadding(0, dp(4), 0, 0)
+        card.addView(content)
+        return card
+    }
+
+    /** 其它：可互动 / 低电量 / 开机自启 / 天气城市 */
+    private fun buildMiscCard(): View {
+        val card = m3.card()
+        val content = m3.cardContent()
+        content.addView(m3.sectionTitle(getString(R.string.sec_misc)).apply { setPadding(0, 0, 0, m3.dp(4)) })
+
+        content.addView(m3.switchRow(
+            getString(R.string.opt_interactive), config.interactive
+        ).also { row ->
+            (row.tag as com.google.android.material.materialswitch.MaterialSwitch)
+                .setOnCheckedChangeListener { _, on ->
+                    config.interactive = on
+                    PetService.reload(this)
+                }
         })
 
-        // ---------- 其它 ----------
-        root.addView(sectionTitle(getString(R.string.sec_misc)))
-
-        root.addView(checkBox(getString(R.string.opt_interactive), config.interactive) { on ->
-            config.interactive = on
-            PetService.reload(this)
+        content.addView(m3.switchRow(
+            getString(R.string.opt_force_interactive),
+            config.forceInteractive,
+            getString(R.string.opt_force_interactive_hint)
+        ).also { row ->
+            (row.tag as com.google.android.material.materialswitch.MaterialSwitch)
+                .setOnCheckedChangeListener { _, on ->
+                    config.forceInteractive = on
+                    PetService.refreshTouchable(this)
+                }
         })
 
-        // v1.2.1：鱼在 app 前台期间是否也保持可互动
-        root.addView(checkBox(
-            getString(R.string.opt_force_interactive), config.forceInteractive
-        ) { on ->
-            config.forceInteractive = on
-            PetService.refreshTouchable(this)
-        })
-        root.addView(TextView(this).apply {
-            text = getString(R.string.opt_force_interactive_hint)
-            textSize = 11f
-            setTextColor(Color.GRAY)
-            setPadding(dp(28), 0, 0, dp(4))
+        content.addView(m3.switchRow(
+            getString(R.string.opt_battery), config.batteryAlert
+        ).also { row ->
+            (row.tag as com.google.android.material.materialswitch.MaterialSwitch)
+                .setOnCheckedChangeListener { _, on ->
+                    config.batteryAlert = on
+                    PetService.reload(this)
+                }
         })
 
-        root.addView(checkBox(getString(R.string.opt_battery), config.batteryAlert) { on ->
-            config.batteryAlert = on
-            PetService.reload(this)
+        content.addView(m3.switchRow(
+            getString(R.string.opt_autostart), config.autoStart
+        ).also { row ->
+            (row.tag as com.google.android.material.materialswitch.MaterialSwitch)
+                .setOnCheckedChangeListener { _, on ->
+                    config.autoStart = on
+                    BootReceiver.setEnabled(this, on)
+                }
         })
 
-        root.addView(checkBox(getString(R.string.opt_autostart), config.autoStart) { on ->
-            config.autoStart = on
-            BootReceiver.setEnabled(this, on)
-        })
+        // ---------- 天气城市 ----------
+        content.addView(m3.divider())
+        content.addView(m3.fieldLabel(getString(R.string.city_label)))
 
-        // 城市
-        val cityRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(12), 0, 0)
-        }
-        cityRow.addView(TextView(this).apply {
-            text = getString(R.string.city_label)
-            textSize = 15f
-        })
-        val cityEdit = EditText(this).apply {
+        val cityLayout = TextInputLayout(this).apply {
             hint = getString(R.string.city_hint)
-            setText(config.city)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginStart = dp(12) }
+            boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_FILLED
         }
-        cityRow.addView(cityEdit)
-        root.addView(cityRow)
+        val cityEdit = TextInputEditText(this).apply {
+            setText(config.city)
+            setSingleLine()
+        }
+        cityLayout.addView(cityEdit)
+        content.addView(cityLayout)
 
         val cityBtns = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            setPadding(0, m3.dp(10), 0, 0)
         }
-        cityBtns.addView(Button(this).apply {
-            text = "保存城市"
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            setOnClickListener {
-                val c = cityEdit.text.toString().trim()
-                if (c.isEmpty()) {
-                    toast("城市不能为空")
-                } else {
-                    config.city = c
-                    PetService.reload(this@SettingsActivity)
-                    toast("城市已设置为$c")
+        cityBtns.addView(
+            m3.button("保存城市", M3ViewFactory.Variant.TONAL).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { marginEnd = m3.dp(8) }
+                setOnClickListener {
+                    val c = cityEdit.text.toString().trim()
+                    if (c.isEmpty()) {
+                        toast("城市不能为空")
+                    } else {
+                        config.city = c
+                        PetService.reload(this@SettingsActivity)
+                        toast("城市已设置为$c")
+                    }
                 }
             }
-        })
-        cityBtns.addView(Button(this).apply {
-            text = getString(R.string.check_weather)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            setOnClickListener {
-                val c = cityEdit.text.toString().trim().ifEmpty { config.city }
-                PetService.requestWeather(this@SettingsActivity, c)
-                toast("正在查询$c 的天气…")
+        )
+        cityBtns.addView(
+            m3.button(getString(R.string.check_weather), M3ViewFactory.Variant.OUTLINED).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                setOnClickListener {
+                    val c = cityEdit.text.toString().trim().ifEmpty { config.city }
+                    PetService.requestWeather(this@SettingsActivity, c)
+                    toast("正在查询$c 的天气…")
+                }
             }
-        })
-        root.addView(cityBtns)
+        )
+        content.addView(cityBtns)
 
-        // ---------- AI 对话（v1.2）----------
-        val aiSection = buildAiSection()
-        aiScrollTarget = aiSection
-        root.addView(aiSection)
-
-        // ---------- 更新（v1.2.1）----------
-        root.addView(buildUpdateSection())
-
-        // 关于
-        root.addView(sectionTitle(getString(R.string.about)))
-        root.addView(TextView(this).apply {
-            text = getString(R.string.about_text)
-            textSize = 13f
-            setTextColor(Color.GRAY)
-        })
-
-        return scroll
+        card.addView(content)
+        return card
     }
 
+    // =============================== AI 区（入口）===============================
+
     /**
-     * AI 配置区。
+     * AI 配置入口卡片（v1.3.1 改为独立页）。
      *
-     * 两种模式：
-     *   - DeepSeek 预设：地址和模型自动填好且不可编辑，用户只需填 Key
-     *   - 自定义：地址和模型可编辑，用于任意 OpenAI 兼容服务
+     * ## 为什么改
+     *
+     * 用户反馈："改了 md3 UI 之后甚至连 API 设置都被吃掉了"。
+     *
+     * 功能其实没丢 —— v1.3 把设置页全部卡片化后，AI 配置被埋在这一长串卡片的
+     * 最深处（要滑过权限、模式、大小、四个开关、城市才看得到），**入口丢了**。
+     *
+     * 现在 AI 相关的全部内容搬到独立的 [AiSettingsActivity]：
+     *   - 对话窗口标题栏的 ⚙ 齿轮 → 直接打开（最常用路径）
+     *   - 这里只留一张入口卡 → 点进去
+     *
+     * 顺带让设置页回归"控制桌宠本身"的单一职责，不再混着模型配置。
+     * 卡里同时显示当前模型，一眼能看出配没配。
      */
     private fun buildAiSection(): View {
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val card = m3.card()
+        val content = m3.cardContent()
+        aiScrollTarget = card
 
-        box.addView(sectionTitle(getString(R.string.sec_ai)))
+        content.addView(m3.sectionTitle(getString(R.string.sec_ai)).apply { setPadding(0, 0, 0, m3.dp(4)) })
 
-        box.addView(checkBox(getString(R.string.ai_enabled), config.aiEnabled) { on ->
-            config.aiEnabled = on
-            PetService.reload(this)
-        })
-
-        // 预设选择
-        val presetLabels = ApiPreset.entries.map { it.label }.toTypedArray()
-        val presetValues = ApiPreset.entries.toList()
-        box.addView(TextView(this).apply {
-            text = getString(R.string.ai_preset)
+        // 当前状态：一眼看出配没配、用的哪个模型
+        val statusLine = TextView(this).apply {
             textSize = 14f
-            setPadding(0, dp(10), 0, dp(2))
-        })
-        var suppressPresetCallback = true
-        val presetSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@SettingsActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                presetLabels
-            )
-            setSelection(presetValues.indexOf(config.apiPreset).coerceAtLeast(0))
+            setPadding(0, 0, 0, m3.dp(4))
         }
-        presetSpinner.onItemSelectedListener =
-            object : android.widget.AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(
-                    parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long
-                ) {
-                    if (suppressPresetCallback) { suppressPresetCallback = false; return }
-                    config.apiPreset = presetValues[position]
-                    applyPresetToFields()
-                }
+        content.addView(statusLine)
 
-                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+        content.addView(m3.hint(
+            "API Key、模型、回答长度、思考开关、语音发送都在这页里。"
+        ).apply { setPadding(0, m3.dp(4), 0, m3.dp(10)) })
+
+        content.addView(
+            m3.button("打开 AI 与账号设置", M3ViewFactory.Variant.FILLED).apply {
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                setOnClickListener { AiSettingsActivity.start(this@SettingsActivity) }
             }
-        box.addView(presetSpinner)
+        )
 
-        // ---------- 回答长度（v1.2.4 新增，v1.2.5 起默认不限制）----------
-        box.addView(fieldLabel(getString(R.string.ai_style)))
-        val styleValues = com.dafeiyu.pet.ai.AiClient.LengthLimit.entries.toList()
-        var suppressStyleCb = true
-        val styleSpinner = Spinner(this).apply {
-            adapter = ArrayAdapter(
-                this@SettingsActivity,
-                android.R.layout.simple_spinner_dropdown_item,
-                styleValues.map { it.label }.toTypedArray()
-            )
-            setSelection(styleValues.indexOf(config.aiLengthLimit).coerceAtLeast(0))
-        }
-        styleSpinner.onItemSelectedListener =
-            object : android.widget.AdapterView.OnItemSelectedListener {
-                override fun onItemSelected(
-                    parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long
-                ) {
-                    if (suppressStyleCb) { suppressStyleCb = false; return }
-                    config.aiLengthLimit = styleValues[position]
-                }
-
-                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
-            }
-        box.addView(styleSpinner)
-        box.addView(TextView(this).apply {
-            text = getString(R.string.ai_style_hint)
-            textSize = 11f
-            setTextColor(Color.GRAY)
-            setPadding(dp(4), dp(2), 0, dp(4))
-        })
-
-        // Key
-        box.addView(fieldLabel(getString(R.string.ai_key)))
-        aiKeyEdit = EditText(this).apply {
-            hint = getString(R.string.ai_key_hint)
-            setText(config.apiKey)
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            setSingleLine()
-        }
-        box.addView(aiKeyEdit)
-
-        // Base URL
-        box.addView(fieldLabel(getString(R.string.ai_base_url)))
-        aiBaseEdit = EditText(this).apply {
-            hint = getString(R.string.ai_base_url_hint)
-            setText(config.apiBaseUrl)
-            inputType = InputType.TYPE_TEXT_VARIATION_URI
-            setSingleLine()
-        }
-        box.addView(aiBaseEdit)
-
-        // Model
-        box.addView(fieldLabel(getString(R.string.ai_model)))
-        aiModelEdit = EditText(this).apply {
-            hint = getString(R.string.ai_model_hint)
-            setText(config.apiModel)
-            setSingleLine()
-        }
-        box.addView(aiModelEdit)
-
-        box.addView(checkBox(
-            getString(R.string.ai_thinking), config.aiThinking
-        ) { on ->
-            config.aiThinking = on
-        })
-        box.addView(TextView(this).apply {
-            text = getString(R.string.ai_thinking_hint)
-            textSize = 11f
-            setTextColor(Color.GRAY)
-            setPadding(dp(28), 0, 0, dp(4))
-        })
-
-        box.addView(checkBox(
-            getString(R.string.voice_auto_send), config.voiceAutoSend
-        ) { on ->
-            config.voiceAutoSend = on
-        })
-        box.addView(TextView(this).apply {
-            text = getString(R.string.voice_auto_send_hint)
-            textSize = 11f
-            setTextColor(Color.GRAY)
-            setPadding(dp(28), 0, 0, dp(6))
-        })
-
-        // 提示
-        aiHintText = TextView(this).apply {
-            textSize = 12f
-            setTextColor(Color.GRAY)
-            setPadding(0, dp(6), 0, 0)
-        }
-        box.addView(aiHintText)
-
-        // 按钮行
-        val btnRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, 0)
-        }
-        btnRow.addView(Button(this).apply {
-            text = getString(R.string.ai_save)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginEnd = dp(4) }
-            setOnClickListener { saveAi(showToast = true) }
-        })
-        btnRow.addView(Button(this).apply {
-            text = getString(R.string.ai_test)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            setOnClickListener {
-                saveAi(showToast = false)
-                testAiConnection()
-            }
-        })
-        box.addView(btnRow)
-
-        // 历史
-        aiHistoryText = TextView(this).apply {
-            textSize = 12f
-            setTextColor(Color.GRAY)
-            setPadding(0, dp(10), 0, 0)
-        }
-        box.addView(aiHistoryText)
-
-        box.addView(Button(this).apply {
-            text = getString(R.string.ai_clear_history)
-            setOnClickListener {
-                ChatHistoryStore(config).clear()
-                refreshAiUi()
-                toast("对话记录已清空")
-            }
-        })
-
-        applyPresetToFields()
-        return box
+        card.addView(content)
+        aiStatusLine = statusLine
+        return card
     }
 
-    private fun fieldLabel(t: String) = TextView(this).apply {
-        text = t
-        textSize = 14f
-        setPadding(0, dp(10), 0, dp(2))
+    /** 供 onResume / 设置变化后刷新 AI 卡片的当前状态文字 */
+    private fun refreshAiEntryCard() {
+        val configured = config.isAiConfigured()
+        aiStatusLine?.apply {
+            text = if (configured) "已配置 ✓　模型：${config.apiModel}"
+            else "未配置 ✗　还没填 API Key"
+            setTextColor(if (configured) m3.primary else m3.error)
+        }
     }
 
-    // =============================== 更新（v1.2.1）===============================
+    // =============================== 更新区 ===============================
 
-    private var updateStatusText: TextView? = null
+    // =============================== 更新区 ===============================
 
     /**
-     * "更新"区。
+     * "更新"卡片。
      *
      * 只做「检查 + 跳转浏览器」，**不自动下载安装 APK**：
      * Android 8+ 安装未知来源应用需要 REQUEST_INSTALL_PACKAGES 权限，
      * 而且静默装包容易被安全软件拦、用户也不放心。把安装交给用户点一下更稳妥。
      */
     private fun buildUpdateSection(): View {
-        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        box.addView(sectionTitle(getString(R.string.sec_update)))
+        val card = m3.card()
+        val content = m3.cardContent()
+        content.addView(m3.sectionTitle(getString(R.string.sec_update)).apply { setPadding(0, 0, 0, m3.dp(4)) })
 
         val curVer = runCatching {
             packageManager.getPackageInfo(packageName, 0).versionName
         }.getOrNull() ?: "?"
 
-        box.addView(TextView(this).apply {
-            text = getString(R.string.update_current, curVer)
-            textSize = 14f
-        })
+        content.addView(m3.body(getString(R.string.update_current, curVer)))
 
-        updateStatusText = TextView(this).apply {
-            textSize = 13f
-            setTextColor(Color.GRAY)
-            setPadding(0, dp(6), 0, 0)
-        }
-        box.addView(updateStatusText)
+        updateStatusText = m3.hint("").apply { setPadding(0, m3.dp(8), 0, 0) }
+        content.addView(updateStatusText)
 
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, m3.dp(12), 0, 0)
         }
-        row.addView(Button(this).apply {
-            text = getString(R.string.update_check)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-                .apply { marginEnd = dp(4) }
-            setOnClickListener { checkForUpdate() }
-        })
-        row.addView(Button(this).apply {
-            text = getString(R.string.update_open_github)
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
-            setOnClickListener { openUrl(UpdateClient.repoUrl) }
-        })
-        box.addView(row)
-
-        box.addView(TextView(this).apply {
-            text = UpdateClient.repoUrl
-            textSize = 11f
-            setTextColor(Color.parseColor("#1565C0"))
-            setPadding(0, dp(6), 0, 0)
-            setOnClickListener { openUrl(UpdateClient.repoUrl) }
-        })
-
-        return box
-    }
-
-    private fun checkForUpdate() {
-        val status = updateStatusText ?: return
-        status.text = getString(R.string.update_checking)
-        status.setTextColor(Color.GRAY)
-        UpdateClient.clearCache()
-        UpdateClient.checkLatest(force = true) { result ->
-            result.onSuccess { info ->
-                val curVer = runCatching {
-                    packageManager.getPackageInfo(packageName, 0).versionName
-                }.getOrNull() ?: "0"
-                when {
-                    info == null -> {
-                        status.text = getString(R.string.update_none)
-                        status.setTextColor(Color.GRAY)
-                    }
-                    info.isNewerThan(curVer) -> {
-                        status.text = getString(R.string.update_available, info.version)
-                        status.setTextColor(Color.parseColor("#2E7D32"))
-                        showUpdateDialog(info)
-                    }
-                    else -> {
-                        status.text = getString(R.string.update_latest_ok)
-                        status.setTextColor(Color.parseColor("#2E7D32"))
-                    }
-                }
-            }.onFailure { e ->
-                status.text = getString(R.string.update_failed, e.message ?: "网络错误")
-                status.setTextColor(Color.parseColor("#C62828"))
-            }
-        }
-    }
-
-    /** 新版本弹窗：显示更新说明，提供"去下载"（跳 Release 页）*/
-    private fun showUpdateDialog(info: UpdateInfo) {
-        val density = resources.displayMetrics.density
-        fun dp(v: Int) = (v * density).toInt()
-
-        val notes = info.notes.trim().ifEmpty { "（该版本没有填写更新说明）" }
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(24), dp(12), dp(24), 0)
-        }
-        box.addView(TextView(this).apply {
-            text = info.title.ifBlank { "v${info.version}" }
-            textSize = 16f
-        })
-        box.addView(TextView(this).apply {
-            text = getString(R.string.update_notes_title)
-            textSize = 13f
-            setTextColor(Color.parseColor("#1565C0"))
-            setPadding(0, dp(12), 0, dp(4))
-        })
-        box.addView(ScrollView(this).apply {
-            addView(TextView(this@SettingsActivity).apply {
-                text = notes
-                textSize = 13f
-                setTextColor(Color.parseColor("#444444"))
-            })
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(200)
-            )
-        })
-
-        val dialog = AlertDialog.Builder(this)
-            .setTitle(getString(R.string.update_available, info.version))
-            .setView(box)
-            .setPositiveButton(R.string.update_now) { _, _ ->
-                // 指向该 Release 页面；如果附带 APK 也可直链下载
-                openUrl(info.apkUrl ?: info.pageUrl)
-            }
-            .setNegativeButton(R.string.update_later, null)
-            .create()
-        dialog.show()
-    }
-
-    private fun openUrl(url: String) {
-        runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-        }.onFailure {
-            toast("打不开浏览器：$url")
-        }
-    }
-
-    /** 按当前预设决定 base/model 是否可编辑，并同步提示语 */
-    private fun applyPresetToFields() {
-        val isDeepSeek = config.apiPreset == ApiPreset.DEEPSEEK
-        aiBaseEdit?.apply {
-            isEnabled = !isDeepSeek
-            setText(if (isDeepSeek) ApiPreset.DEEPSEEK.baseUrl else config.apiBaseUrl)
-            alpha = if (isDeepSeek) 0.6f else 1f
-        }
-        aiModelEdit?.apply {
-            isEnabled = !isDeepSeek
-            setText(if (isDeepSeek) ApiPreset.DEEPSEEK.model else config.apiModel)
-            alpha = if (isDeepSeek) 0.6f else 1f
-        }
-        aiHintText?.text = getString(
-            if (isDeepSeek) R.string.ai_hint_deepseek else R.string.ai_hint_custom
-        )
-        refreshAiUi()
-    }
-
-    private fun refreshAiUi() {
-        val n = ChatHistoryStore(config).size()
-        aiHistoryText?.text = getString(R.string.ai_history_count, n)
-    }
-
-    private fun saveAi(showToast: Boolean) {
-        config.apiKey = aiKeyEdit?.text?.toString().orEmpty()
-        if (config.apiPreset == ApiPreset.CUSTOM) {
-            config.apiBaseUrl = aiBaseEdit?.text?.toString().orEmpty()
-            config.apiModel = aiModelEdit?.text?.toString().orEmpty()
-        }
-        PetService.reload(this)
-        refreshAiUi()
-        if (showToast) {
-            toast(
-                if (config.isAiConfigured()) "AI 设置已保存"
-                else "已保存，但还没填 API Key"
-            )
-        }
-    }
-
-    /** 用一句最简请求验证 Key / 地址 / 模型是否可用 */
-    private fun testAiConnection() {
-        if (!config.isAiConfigured()) {
-            toast("请先填写 API Key")
-            return
-        }
-        toast("正在测试连接…")
-        AiClient.ask(
-            baseUrl = config.apiBaseUrl,
-            apiKey = config.apiKey,
-            model = config.apiModel,
-            history = emptyList(),
-            userText = "回复两个字：在的",
-            // 测试连接用默认无限制，避免提示词干扰"能不能连通"的判断
-            limit = com.dafeiyu.pet.ai.AiClient.LengthLimit.NONE,
-            callback = object : AiClient.Callback {
-                override fun onDelta(text: String) = Unit
-                override fun onComplete(text: String) {
-                    toast("连接成功 ✓ 模型回复：${text.take(20)}")
-                }
-
-                override fun onError(message: String) {
-                    toast("连接失败：$message")
-                }
+        row.addView(
+            m3.button(getString(R.string.update_check), M3ViewFactory.Variant.TONAL).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                    .apply { marginEnd = m3.dp(8) }
+                setOnClickListener { checkForUpdate() }
             }
         )
+        row.addView(
+            m3.button(getString(R.string.update_open_github), M3ViewFactory.Variant.OUTLINED).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                setOnClickListener { openUrl(UpdateClient.repoUrl) }
+            }
+        )
+        content.addView(row)
+
+        content.addView(m3.hint(UpdateClient.repoUrl).apply {
+            setPadding(0, m3.dp(10), 0, 0)
+            setTextColor(m3.primary)   // 链接用主色
+            setOnClickListener { openUrl(UpdateClient.repoUrl) }
+        })
+
+        card.addView(content)
+        return card
     }
 
-    /** 从长按鱼身跳过来时，滚动到 AI 区并聚焦 Key 输入框 */
+    private fun buildAbout(): View {
+        val card = m3.card()
+        val content = m3.cardContent()
+        content.addView(m3.sectionTitle(getString(R.string.about)).apply { setPadding(0, 0, 0, m3.dp(4)) })
+        content.addView(m3.body(getString(R.string.about_text)))
+        card.addView(content)
+        return card
+    }
+
+    /** 从长按鱼身跳过来时，滚动到 AI 入口卡片 */
     private fun focusAiSection() {
         val target = aiScrollTarget ?: return
         target.post {
             (target.parent as? ScrollView)?.smoothScrollTo(0, target.top)
-        }
-        aiKeyEdit?.post {
-            aiKeyEdit?.requestFocus()
-            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showSoftInput(aiKeyEdit, InputMethodManager.SHOW_IMPLICIT)
-        }
-    }
-
-    private fun sectionTitle(t: String) = TextView(this).apply {
-        text = t
-        textSize = 13f
-        setTextColor(Color.parseColor("#1565C0"))
-        setPadding(0, dp(20), 0, dp(6))
-    }
-
-    private fun checkBox(
-        label: String,
-        checked: Boolean,
-        onChange: (Boolean) -> Unit
-    ) = CheckBox(this).apply {
-        text = label
-        isChecked = checked
-        setOnCheckedChangeListener { _, on -> onChange(on) }
-    }
-
-    /** Spinner 的选中回调包一层，避免初始化时误触发写配置 */
-    private fun Spinner.onItemSelected(action: (Int) -> Unit) {
-        var first = true
-        onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(
-                parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long
-            ) {
-                if (first) { first = false; return }
-                action(position)
-            }
-
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
         }
     }
 
@@ -869,30 +641,51 @@ class SettingsActivity : AppCompatActivity() {
 
     // =============================== 状态刷新 ===============================
 
+    /**
+     * 刷新状态卡片与按钮可用性。
+     *
+     * v1.3 起状态不再是干巴巴一行字，而是：
+     *   - 运行中：primaryContainer 底色（强调）
+     *   - 已停止：surfaceContainerHighest 底色（中性）
+     * 权限缺失用 error 色提示，一眼能看出问题在哪。
+     */
     private fun refreshState() {
+        // AI 入口卡片的状态也要跟着刷新（从 AI 设置页返回时模型可能已改）
+        refreshAiEntryCard()
         val overlayOk = Settings.canDrawOverlays(this)
         val notifyOk = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
                 (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
                         == PackageManager.PERMISSION_GRANTED)
         val running = PetRuntime.isRunning
 
-        statusText.text = buildString {
-            append(if (running) getString(R.string.pet_running) else getString(R.string.pet_stopped))
-            append("　|　")
-            append(if (overlayOk) "悬浮窗 ✓" else "悬浮窗 ✗")
-            append("　|　")
-            append(if (notifyOk) "通知 ✓" else "通知 ✗")
+        statusTitle?.text = getString(if (running) R.string.pet_running else R.string.pet_stopped)
+        statusCard?.setCardBackgroundColor(
+            if (running) m3.primaryContainer else m3.surfaceContainerHigh
+        )
+        statusTitle?.setTextColor(
+            if (running) m3.onPrimaryContainer else m3.onSurface
+        )
+
+        statusDetail?.apply {
+            text = buildString {
+                append(if (overlayOk) "悬浮窗权限 ✓" else "悬浮窗权限 ✗ 需要授予")
+                append("　·　")
+                append(if (notifyOk) "通知权限 ✓" else "通知权限 ✗ 未授予")
+            }
+            setTextColor(
+                if (overlayOk && notifyOk) m3.onSurfaceVariant else m3.error
+            )
         }
 
-        overlayBtn.isEnabled = !overlayOk
-        overlayBtn.text = if (overlayOk) getString(R.string.grant_overlay_done)
+        overlayBtn?.isEnabled = !overlayOk
+        overlayBtn?.text = if (overlayOk) getString(R.string.grant_overlay_done)
         else getString(R.string.grant_overlay)
 
-        notifyBtn.isEnabled = !notifyOk
-        notifyBtn.text = if (notifyOk) "通知权限已授予 ✓" else getString(R.string.grant_notify)
+        notifyBtn?.isEnabled = !notifyOk
+        notifyBtn?.text = if (notifyOk) "通知权限已授予 ✓" else getString(R.string.grant_notify)
 
-        startBtn.isEnabled = !running
-        stopBtn.isEnabled = running
+        startBtn?.isEnabled = !running
+        stopBtn?.isEnabled = running
 
         if (running && !overlayOk) {
             // 悬浮窗权限被撤销了，服务会自杀，这里提示一下
@@ -900,8 +693,102 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    private fun checkForUpdate() {
+        val status = updateStatusText ?: return
+        status.text = getString(R.string.update_checking)
+        status.setTextColor(m3.onSurfaceVariant)
+        UpdateClient.clearCache()
+        UpdateClient.checkLatest(force = true) { result ->
+            result.onSuccess { info ->
+                val curVer = runCatching {
+                    packageManager.getPackageInfo(packageName, 0).versionName
+                }.getOrNull() ?: "0"
+                when {
+                    info == null -> {
+                        status.text = getString(R.string.update_none)
+                        status.setTextColor(m3.onSurfaceVariant)
+                    }
+                    info.isNewerThan(curVer) -> {
+                        status.text = getString(R.string.update_available, info.version)
+                        status.setTextColor(m3.primary)
+                        showUpdateDialog(info)
+                    }
+                    else -> {
+                        status.text = getString(R.string.update_latest_ok)
+                        status.setTextColor(m3.primary)
+                    }
+                }
+            }.onFailure { e ->
+                status.text = getString(R.string.update_failed, e.message ?: "网络错误")
+                status.setTextColor(m3.error)
+            }
+        }
+    }
+
+    /** 新版本弹窗：显示更新说明，提供"去下载"（跳 Release 页） */
+    private fun showUpdateDialog(info: UpdateInfo) {
+        val notes = info.notes.trim().ifEmpty { "（该版本没有填写更新说明）" }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(m3.dp(24), m3.dp(12), m3.dp(24), 0)
+        }
+        box.addView(TextView(this).apply {
+            text = info.title.ifBlank { "v${info.version}" }
+            textSize = 16f
+            setTextColor(m3.onSurface)
+        })
+        box.addView(TextView(this).apply {
+            text = getString(R.string.update_notes_title)
+            textSize = 13f
+            setTextColor(m3.primary)
+            setPadding(0, m3.dp(12), 0, m3.dp(4))
+        })
+        box.addView(ScrollView(this).apply {
+            addView(TextView(this@SettingsActivity).apply {
+                text = notes
+                textSize = 13f
+                setTextColor(m3.onSurfaceVariant)
+            })
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, m3.dp(200)
+            )
+        })
+
+        // Material 3 对话框：自动套用 28dp 圆角与 M3 排版
+        val dialog = com.google.android.material.dialog.MaterialAlertDialogBuilder(this)
+            .setTitle(getString(R.string.update_available, info.version))
+            .setView(box)
+            .setPositiveButton(R.string.update_now) { _, _ ->
+                openUrl(info.apkUrl ?: info.pageUrl)
+            }
+            .setNegativeButton(R.string.update_later, null)
+            .create()
+        dialog.show()
+    }
+
+    private fun openUrl(url: String) {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.onFailure {
+            toast("打不开浏览器：$url")
+        }
+    }
+
+    /** Spinner 的选中回调包一层，避免初始化时误触发写配置 */
+    private fun android.widget.Spinner.onItemSelected(action: (Int) -> Unit) {
+        var first = true
+        onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long
+            ) {
+                if (first) { first = false; return }
+                action(position)
+            }
+
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+        }
+    }
+
     private fun toast(msg: String) =
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
-
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 }

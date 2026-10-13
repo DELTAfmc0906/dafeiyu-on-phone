@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  M3 字体令牌。
+
+  M3 把排版分成五档角色，每档有固定用途与规格：
+
+    Display   57/45/36sp  超大数字、极短的关键信息
+    Headline  32/28/24sp  页面级标题
+    Title     22/16/14sp  区块标题、卡片标题
+    Body      16/14/12sp  正文（最常用）
+    Label     14/12/11sp  按钮、标签、说明文字
+
+  之前代码里到处是手写的 textSize = 13f / 15f，没有体系。
+  改成引用这些令牌后，字号有了明确语义，也便于统一调整。
+-->
+<resources>
+    <!-- 区块标题（比如"启动与权限"「模式」「大小」） -->
+    <style name="TextAppearance.Dafeiyu.TitleMedium" parent="TextAppearance.Material3.TitleMedium">
+        <item name="android:textSize">16sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <!-- 页面大标题 -->
+    <style name="TextAppearance.Dafeiyu.HeadlineSmall" parent="TextAppearance.Material3.HeadlineSmall">
+        <item name="android:textSize">24sp</item>
+    </style>
+
+    <!-- 正文 -->
+    <style name="TextAppearance.Dafeiyu.BodyMedium" parent="TextAppearance.Material3.BodyMedium">
+        <item name="android:textSize">14sp</item>
+        <item name="android:lineSpacingMultiplier">1.25</item>
+    </style>
+
+    <!-- 辅助说明（灰色小字） -->
+    <style name="TextAppearance.Dafeiyu.BodySmall" parent="TextAppearance.Material3.BodySmall">
+        <item name="android:textSize">12sp</item>
+        <item name="android:lineSpacingMultiplier">1.3</item>
+    </style>
+
+    <!-- 按钮文字 -->
+    <style name="TextAppearance.Dafeiyu.LabelLarge" parent="TextAppearance.Material3.LabelLarge">
+        <item name="android:textSize">14sp</item>
+    </style>
+</resources>

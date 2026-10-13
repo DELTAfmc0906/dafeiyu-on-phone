@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Material You 3 配色（深色）。
+
+  同样是那组语义角色，只换 tone 值 —— 这正是 M3 颜色体系的用意：
+  深浅主题共用一套角色名，组件代码完全不用改。
+
+  深色下注意：容器色要**更暗**而不是更亮，"on" 色要**更亮**，
+  这样对比度依然达标，同时避免大面积刺眼。
+-->
+<resources>
+    <color name="m3_primary">#B0C6FF</color>
+    <color name="m3_on_primary">#062E6F</color>
+    <color name="m3_primary_container">#224484</color>
+    <color name="m3_on_primary_container">#DBE1FF</color>
+
+    <color name="m3_secondary">#BEC6DC</color>
+    <color name="m3_on_secondary">#283041</color>
+    <color name="m3_secondary_container">#3E4759</color>
+    <color name="m3_on_secondary_container">#DAE2F9</color>
+
+    <color name="m3_tertiary">#DDBCE0</color>
+    <color name="m3_on_tertiary">#3F2844</color>
+    <color name="m3_tertiary_container">#573E5C</color>
+    <color name="m3_on_tertiary_container">#FAD8FD</color>
+
+    <color name="m3_error">#FFB4AB</color>
+    <color name="m3_on_error">#690005</color>
+    <color name="m3_error_container">#93000A</color>
+    <color name="m3_on_error_container">#FFDAD6</color>
+
+    <color name="m3_background">#1B1B1F</color>
+    <color name="m3_on_background">#E5E1E6</color>
+    <color name="m3_surface">#1B1B1F</color>
+    <color name="m3_on_surface">#E5E1E6</color>
+    <color name="m3_surface_variant">#44464F</color>
+    <color name="m3_on_surface_variant">#C5C6D0</color>
+    <color name="m3_surface_container_lowest">#0F0D13</color>
+    <color name="m3_surface_container_low">#232227</color>
+    <color name="m3_surface_container">#27262B</color>
+    <color name="m3_surface_container_high">#323035</color>
+    <color name="m3_surface_container_highest">#3C3A40</color>
+
+    <color name="m3_outline">#8F9099</color>
+    <color name="m3_outline_variant">#44464F</color>
+    <color name="m3_inverse_surface">#E5E1E6</color>
+    <color name="m3_inverse_on_surface">#313033</color>
+    <color name="m3_scrim">#000000</color>
+</resources>

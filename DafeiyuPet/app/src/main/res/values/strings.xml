@@ -49,6 +49,7 @@
     <string name="size_large">大 34%</string>
     <string name="size_current">当前大小：占屏幕高度 %1$d%%</string>
     <string name="size_hint">拖动滑杆自由调节（8%~50%）。嫌挡事就拉到 10% 左右。</string>
+    <string name="overlay_hint">悬浮窗权限没有弹窗，需要跳到系统设置里手动打开「允许显示在其他应用上层」。</string>
 
     <string name="opt_interactive">可互动（关掉后摸不到它）</string>
     <string name="opt_force_interactive">打开 app 时鱼也保持可互动</string>

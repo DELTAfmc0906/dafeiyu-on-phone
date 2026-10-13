@@ -1,27 +1,124 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.DafeiyuPet" parent="Theme.MaterialComponents.DayNight.DarkActionBar">
-        <item name="colorPrimary">#1565C0</item>
-        <item name="colorPrimaryVariant">#0D47A1</item>
-        <item name="colorSecondary">#00BFA5</item>
+<!--
+  主题 —— v1.3 起迁移到 Material You 3（M3）。
+
+  ## 从 M2 迁移到 M3 做了什么
+
+  原来是 `Theme.MaterialComponents.*`（Material 2），颜色角色只有
+  colorPrimary / colorSecondary 寥寥几个，形状与字体令牌也不完整。
+  M3 的关键差异：
+
+  1. **颜色角色大幅扩充**：新增 primaryContainer / surfaceContainer* /
+     outlineVariant 等。作用是"语义化" —— 组件声明自己该用哪个角色，
+     而不是写死一个色值，于是换主题/动态取色时整体一致地变。
+
+  2. **层级用色调而非阴影**：M3 用 surfaceContainerLow→High 的明度差
+     表达层级，比 M2 的 elevation 阴影更适合深色模式。
+
+  3. **形状令牌化**：M3 定义 XS4/S8/M12/L16/XL28/Full 六档。
+     按钮用 Full（胶囊）、卡片与对话框用 L(16)、文本框用 XS(4)。
+
+  4. **字体令牌化**：Display/Headline/Title/Body/Label 五档，
+     每档有明确的字号与字重，替代随手写的 textSize。
+
+  动态取色（Material You 的精髓）在 DafeiyuApp 里按需开启：
+  Android 12+ 会从用户壁纸提取配色覆盖上面这些角色。
+-->
+<resources xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- ============ 基础主题 ============ -->
+    <style name="Theme.DafeiyuPet" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- 主色 -->
+        <item name="colorPrimary">@color/m3_primary</item>
+        <item name="colorOnPrimary">@color/m3_on_primary</item>
+        <item name="colorPrimaryContainer">@color/m3_primary_container</item>
+        <item name="colorOnPrimaryContainer">@color/m3_on_primary_container</item>
+
+        <!-- 次色 -->
+        <item name="colorSecondary">@color/m3_secondary</item>
+        <item name="colorOnSecondary">@color/m3_on_secondary</item>
+        <item name="colorSecondaryContainer">@color/m3_secondary_container</item>
+        <item name="colorOnSecondaryContainer">@color/m3_on_secondary_container</item>
+
+        <!-- 第三色（点缀） -->
+        <item name="colorTertiary">@color/m3_tertiary</item>
+        <item name="colorOnTertiary">@color/m3_on_tertiary</item>
+        <item name="colorTertiaryContainer">@color/m3_tertiary_container</item>
+        <item name="colorOnTertiaryContainer">@color/m3_on_tertiary_container</item>
+
+        <!-- 错误 -->
+        <item name="colorError">@color/m3_error</item>
+        <item name="colorOnError">@color/m3_on_error</item>
+        <item name="colorErrorContainer">@color/m3_error_container</item>
+        <item name="colorOnErrorContainer">@color/m3_on_error_container</item>
+
+        <!-- 背景与表面 -->
+        <item name="android:colorBackground">@color/m3_background</item>
+        <item name="colorOnBackground">@color/m3_on_background</item>
+        <item name="colorSurface">@color/m3_surface</item>
+        <item name="colorOnSurface">@color/m3_on_surface</item>
+        <item name="colorSurfaceVariant">@color/m3_surface_variant</item>
+        <item name="colorOnSurfaceVariant">@color/m3_on_surface_variant</item>
+        <item name="colorSurfaceContainerLowest">@color/m3_surface_container_lowest</item>
+        <item name="colorSurfaceContainerLow">@color/m3_surface_container_low</item>
+        <item name="colorSurfaceContainer">@color/m3_surface_container</item>
+        <item name="colorSurfaceContainerHigh">@color/m3_surface_container_high</item>
+        <item name="colorSurfaceContainerHighest">@color/m3_surface_container_highest</item>
+        <item name="colorSurfaceInverse">@color/m3_inverse_surface</item>
+        <item name="colorOnSurfaceInverse">@color/m3_inverse_on_surface</item>
+
+        <!-- 描边与遮罩 -->
+        <item name="colorOutline">@color/m3_outline</item>
+        <item name="colorOutlineVariant">@color/m3_outline_variant</item>
+        <item name="android:colorControlHighlight">@color/m3_primary_container</item>
+
+        <!-- 状态栏与导航栏跟随主题，避免顶部出现突兀色块 -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar" tools:targetApi="m">true</item>
     </style>
 
     <!--
-      AI 对话界面用的主题（v1.2.2）。
+      AI 对话界面主题。
 
-      做成"贴底浮层"而不是全屏页面：
-        windowIsFloating  -> 真正浮起来，不铺满
-        windowBackground  -> 透明，露出下面的内容
-        backgroundDim     -> 轻微压暗背景，视觉上突出对话层
-      关键是它**仍然是一个真正的 Activity 窗口**，
-      所以输入法能正常建立 InputConnection（这正是悬浮窗做不到的）。
+      做成"贴底浮层"：windowIsFloating + 透明背景 + 轻微压暗，
+      但它**仍然是一个真正的 Activity 窗口** ——
+      这是 v1.2.2 的关键修复：悬浮窗拿不到输入法的 InputConnection（键盘弹了打不进字），
+      而且脱离 Activity 生命周期容易残留成吃掉全局触摸的孤儿窗口。
     -->
-    <style name="Theme.DafeiyuPet.Chat" parent="Theme.MaterialComponents.DayNight.Dialog">
+    <style name="Theme.DafeiyuPet.Chat" parent="Theme.DafeiyuPet">
         <item name="android:windowIsFloating">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:backgroundDimEnabled">true</item>
         <item name="android:windowSoftInputMode">adjustResize|stateVisible</item>
         <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+        <item name="android:windowElevation">0dp</item>
     </style>
+
+    <!-- ============ M3 形状令牌 ============ -->
+    <!--
+      M3 的圆角尺度：XS 4 / S 8 / M 12 / L 16 / XL 28 / Full 9999。
+      组件默认已经绑好了各自的档位（按钮 Full、卡片与对话框 L、文本框 XS），
+      这里显式声明一遍是为了后续统一调整，也便于在代码里引用。
+    -->
+    <style name="Shape.DafeiyuPet" parent="">
+        <item name="cornerFamily">rounded</item>
+        <item name="cornerSize">@dimen/m3_shape_medium</item>
+    </style>
+
+    <dimen name="m3_shape_extra_small">4dp</dimen>
+    <dimen name="m3_shape_small">8dp</dimen>
+    <dimen name="m3_shape_medium">12dp</dimen>
+    <dimen name="m3_shape_large">16dp</dimen>
+    <dimen name="m3_shape_extra_large">28dp</dimen>
+
+    <!-- 间距：M3 常用 4dp 基准栅格 -->
+    <dimen name="m3_space_xs">4dp</dimen>
+    <dimen name="m3_space_s">8dp</dimen>
+    <dimen name="m3_space_m">12dp</dimen>
+    <dimen name="m3_space_l">16dp</dimen>
+    <dimen name="m3_space_xl">24dp</dimen>
+    <dimen name="m3_space_xxl">32dp</dimen>
+
 </resources>

@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Material You 3 配色（浅色）。
+
+  遵循 M3 的**语义化颜色角色**体系：不直接写 "蓝色"，而是声明
+  primary / onPrimary / primaryContainer… 这组角色，
+  这样换主题（或启用动态取色）时整套颜色会一起变，不会留下硬编码色块。
+
+  这组值由 M3 的 HCT 色彩空间推导而来：同一色调（hue）下用不同
+  tone（明度）生成容器色，保证对比度满足无障碍要求。
+-->
+<resources>
+    <!-- Primary：主要操作、强调色 -->
+    <color name="m3_primary">#3B5BA9</color>
+    <color name="m3_on_primary">#FFFFFF</color>
+    <color name="m3_primary_container">#DBE1FF</color>
+    <color name="m3_on_primary_container">#001945</color>
+
+    <!-- Secondary：次要操作、过滤chip -->
+    <color name="m3_secondary">#565E71</color>
+    <color name="m3_on_secondary">#FFFFFF</color>
+    <color name="m3_secondary_container">#DAE2F9</color>
+    <color name="m3_on_secondary_container">#131C2B</color>
+
+    <!-- Tertiary：对比强调（用于点缀，补偿主色） -->
+    <color name="m3_tertiary">#705575</color>
+    <color name="m3_on_tertiary">#FFFFFF</color>
+    <color name="m3_tertiary_container">#FAD8FD</color>
+    <color name="m3_on_tertiary_container">#29132E</color>
+
+    <!-- Error -->
+    <color name="m3_error">#BA1A1A</color>
+    <color name="m3_on_error">#FFFFFF</color>
+    <color name="m3_error_container">#FFDAD6</color>
+    <color name="m3_on_error_container">#410002</color>
+
+    <!-- Surface 系列：用不同 tone 做层级，M3 主张用色调而非阴影 -->
+    <color name="m3_background">#FEFBFF</color>
+    <color name="m3_on_background">#1B1B1F</color>
+    <color name="m3_surface">#FEFBFF</color>
+    <color name="m3_on_surface">#1B1B1F</color>
+    <color name="m3_surface_variant">#E1E2EC</color>
+    <color name="m3_on_surface_variant">#44464F</color>
+    <color name="m3_surface_container_lowest">#FFFFFF</color>
+    <color name="m3_surface_container_low">#F7F2FA</color>
+    <color name="m3_surface_container">#F2EDF4</color>
+    <color name="m3_surface_container_high">#ECE6F0</color>
+    <color name="m3_surface_container_highest">#E6E0E9</color>
+
+    <!-- 描边：outline 用于需要边界的元素，outlineVariant 用于分隔线 -->
+    <color name="m3_outline">#757780</color>
+    <color name="m3_outline_variant">#C5C6D0</color>
+    <color name="m3_inverse_surface">#313033</color>
+    <color name="m3_inverse_on_surface">#F4EFF4</color>
+    <color name="m3_scrim">#000000</color>
+</resources>
