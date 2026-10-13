@@ -35,9 +35,34 @@ data class ChatMessage(val role: String, val content: String) {
  */
 object AiClient {
 
-    /** 系统提示词，沿用原 Python 版的人设，并补充"要贴桌宠身份"的约束 */
-    const val SYSTEM_PROMPT =
-        "你是桌面宠物大肥鱼，贱兮兮但可爱，每句话不超过25字，偶尔吐槽主人但别真骂人。"
+    /**
+     * 回答风格（v1.2.4 新增，可在设置里切）。
+     *
+     * 之所以做成选项：用户对"该说多长"的期待差别很大 ——
+     * 有人只要桌宠那种俏皮短句，有人要正经答案。
+     * 把这个决定权交出去，比写死一个值好。
+     */
+    enum class Style(val key: String, val label: String, val hint: String) {
+        /**
+         * 桌宠风：短句、俏皮，贴近原 Python 版的观感。
+         */
+        PET("pet", "桌宠风（短句俏皮）", "回答保持简短俏皮，不超过40字，像桌宠说话"),
+
+        /**
+         * 默认：正常作答，该说多少说多少。
+         */
+        NORMAL("normal", "正常（推荐）", ""),
+
+        /**
+         * 详细：要求分点、展开。
+         */
+        DETAILED("detailed", "详细（分点展开）", "回答请分点、充分展开，不要为了简短而省略关键信息");
+
+        companion object {
+            fun from(key: String?): Style =
+                entries.firstOrNull { it.key == key } ?: NORMAL
+        }
+    }
 
     private const val CONNECT_TIMEOUT_MS = 15_000
     private const val READ_TIMEOUT_MS = 60_000
@@ -57,6 +82,17 @@ object AiClient {
 
     /** 对话历史上限，与原程序一致 */
     const val MAX_HISTORY = 40
+
+    /** 基础人设（不含长度约束，长度由 [Style] 追加） */
+    private const val PERSONA =
+        "你是「大肥鱼」，一只住在用户手机上的桌面宠物鲸鱼娘，性格贱兮兮但可爱，" +
+                "偶尔吐槽主人但不真骂人。不要自称AI或大模型，自然地以大肥鱼的身份说话。"
+
+    /** 拼出最终的 system 提示词 */
+    fun buildSystemPrompt(style: Style): String {
+        val hint = style.hint
+        return if (hint.isEmpty()) PERSONA else "$PERSONA$hint。"
+    }
 
     private val io = Executors.newSingleThreadExecutor { r ->
         Thread(r, "ai-io").apply { isDaemon = true }
@@ -111,6 +147,9 @@ object AiClient {
      * @param enableThinking 是否开启模型的思考（思维链）。
      *        开启后思考内容走 `onThinking`，正文走 `onDelta`；
      *        关闭可显著降低 token 消耗与延迟（实测响应体积差 50 倍）。
+     * @param style 回答风格，决定是否附加上字数/展开程度的约束。
+     *        默认 [Style.NORMAL]（不限制长度）—— 早期版本硬编码了
+     *        "每句话不超过25字"，那是桌宠气泡的限制，不该用在问答上。
      */
     fun ask(
         baseUrl: String,
@@ -119,6 +158,7 @@ object AiClient {
         history: List<ChatMessage>,
         userText: String,
         enableThinking: Boolean = false,
+        style: Style = Style.NORMAL,
         callback: Callback
     ) {
         val endpoint = normalizeEndpoint(baseUrl)
@@ -139,7 +179,7 @@ object AiClient {
             var conn: HttpURLConnection? = null
             try {
                 val messages = JSONArray().apply {
-                    put(JSONObject().put("role", ChatMessage.ROLE_SYSTEM).put("content", SYSTEM_PROMPT))
+                    put(JSONObject().put("role", ChatMessage.ROLE_SYSTEM).put("content", buildSystemPrompt(style)))
                     history.takeLast(MAX_HISTORY).forEach {
                         put(JSONObject().put("role", it.role).put("content", it.content))
                     }

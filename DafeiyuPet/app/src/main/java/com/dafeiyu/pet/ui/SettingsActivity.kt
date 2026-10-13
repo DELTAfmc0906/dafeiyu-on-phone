@@ -441,6 +441,37 @@ class SettingsActivity : AppCompatActivity() {
             }
         box.addView(presetSpinner)
 
+        // ---------- 回答风格（v1.2.4）----------
+        box.addView(fieldLabel(getString(R.string.ai_style)))
+        val styleValues = com.dafeiyu.pet.ai.AiClient.Style.entries.toList()
+        var suppressStyleCb = true
+        val styleSpinner = Spinner(this).apply {
+            adapter = ArrayAdapter(
+                this@SettingsActivity,
+                android.R.layout.simple_spinner_dropdown_item,
+                styleValues.map { it.label }.toTypedArray()
+            )
+            setSelection(styleValues.indexOf(config.aiStyle).coerceAtLeast(0))
+        }
+        styleSpinner.onItemSelectedListener =
+            object : android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(
+                    parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long
+                ) {
+                    if (suppressStyleCb) { suppressStyleCb = false; return }
+                    config.aiStyle = styleValues[position]
+                }
+
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) = Unit
+            }
+        box.addView(styleSpinner)
+        box.addView(TextView(this).apply {
+            text = getString(R.string.ai_style_hint)
+            textSize = 11f
+            setTextColor(Color.GRAY)
+            setPadding(dp(4), dp(2), 0, dp(4))
+        })
+
         // Key
         box.addView(fieldLabel(getString(R.string.ai_key)))
         aiKeyEdit = EditText(this).apply {
@@ -745,6 +776,8 @@ class SettingsActivity : AppCompatActivity() {
             model = config.apiModel,
             history = emptyList(),
             userText = "回复两个字：在的",
+            // 测试连接用最简风格，避免风格提示词干扰"能不能连通"的判断
+            style = com.dafeiyu.pet.ai.AiClient.Style.NORMAL,
             callback = object : AiClient.Callback {
                 override fun onDelta(text: String) = Unit
                 override fun onComplete(text: String) {

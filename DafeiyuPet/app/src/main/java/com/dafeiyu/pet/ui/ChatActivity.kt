@@ -195,6 +195,7 @@ class ChatActivity : AppCompatActivity() {
             history = snapshot,
             userText = userText,
             enableThinking = config.aiThinking,
+            style = config.aiStyle,
             callback = aiCallback
         )
     }

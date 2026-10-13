@@ -24,6 +24,8 @@
     <string name="ai_hint_deepseek">DeepSeek 预设已自动填好地址和模型，只需填 Key。</string>
     <string name="ai_hint_custom">填任意 OpenAI 兼容服务的地址与模型（通义/智谱/Kimi/本地 ollama 等）。</string>
     <string name="ai_history_count">当前对话记录：%1$d 条（最多保留 40 条）</string>
+    <string name="ai_style">回答风格</string>
+    <string name="ai_style_hint">「桌宠风」会限制字数（贴原桌宠观感）；想听正经答案就选「正常」或「详细」。</string>
     <string name="ai_thinking">显示思考过程（思维链）</string>
     <string name="ai_thinking_hint">开启后模型的思考会以灰色斜体气泡显示。注意：思考很耗 token 且明显变慢（实测响应体积差 50 倍），默认关闭。</string>
     <string name="voice_auto_send">语音识别后自动发送</string>
