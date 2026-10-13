@@ -334,20 +334,41 @@ class AiSettingsActivity : AppCompatActivity() {
     }
 
     /**
-     * 说明本机语音识别能力。
+     * 说明本机语音识别能力，并给出**可操作的**改善建议。
      *
-     * 离线识别需要 Android 12+ 且系统已安装对应语言的离线识别包，
-     * 不是所有机器都有。把实际情况显示出来，比让用户猜要好。
+     * ## 实测发现（小米 17 / HyperOS / Android 17）
+     *
+     * 手机上只有一个标准 `RecognitionService`：`com.xiaomi.mibrain.speech/.asr.AsrService`。
+     * 讯飞/百度输入法虽然装了，但用的是**私有协议**（`com.iflytek.inputmethod.speech`），
+     * 不注册标准接口，系统 API 选不到它们。
+     *
+     * 而小米这个服务**默认只走网络** —— 日志里直接写着：
+     * ```
+     * AsrService: onStartListening: useLocal=false
+     * AsrService: network available, startAudioInput
+     * ```
+     *
+     * 也就是说：**只有下载了离线识别包，`useLocal` 才会变 true**。
+     * 所以这里不能只报"不支持"，得告诉用户去哪里开。
      */
     private fun voiceCapabilityText(): String {
         val v = com.dafeiyu.pet.ai.VoiceInput(this)
         val offline = v.hasOnDevice()
         val online = v.hasNetwork()
+        val svc = v.currentServiceName()
         return when {
             offline && online -> "本机支持离线识别 ✓（同时可用在线识别）"
             offline -> "本机支持离线识别 ✓（在线识别不可用）"
-            online -> "本机不支持离线识别，只能用在线识别。" +
-                    "若经常断连，可在系统设置里下载「离线语音识别」语言包。"
+            online -> buildString {
+                // 注意：这里的 hint 是普通 TextView，**不支持 Markdown**，
+                // 写 ** 会原样显示出来。用纯文本表达强调。
+                append("本机没有可用的离线识别，只能用在线识别 —— 网络一差就会卡或断连。\n\n")
+                append("改善办法：去系统设置里下载离线语音包\n")
+                append("· 小米：设置 → 小爱同学 → 语音识别 → 离线语音识别，下载中文包\n")
+                append("· 其它机型：设置 → 系统 → 语言和输入法 → 语音输入，找离线包\n\n")
+                append("下载后本 App 会自动用上，不需要再改任何设置。")
+                if (svc.isNotEmpty()) append("\n\n当前识别服务：$svc")
+            }
             else -> "本机没有可用的语音识别服务。"
         }
     }

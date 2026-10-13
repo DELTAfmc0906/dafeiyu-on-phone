@@ -326,6 +326,24 @@ class PetView(
     }
 
     /** 气泡：白底（心声为浅灰底斜体），圆角矩形 + 下方小三角 */
+    /**
+     * 绘制台词气泡。
+     *
+     * ## v1.4.0 修复「文字重合」
+     *
+     * 旧实现的两个问题：
+     *
+     * 1. **字号与预留区独立计算**：`textSize` 由 `bubbleReserve * 0.26` 得出，
+     *    而 Android 会按系统 `fontScale` 再放大 `Paint.textSize`。
+     *    用户把系统字体调到 125%（HyperOS 上很常见）后，文字比预留空间大 25%。
+     *
+     * 2. **装不下就硬画**：结尾只是 `by.coerceAtLeast(0f)`，
+     *    压不住就画到宠物本体上 —— 表现为文字和角色糊在一起。
+     *
+     * 现在改成：**按实际可用高度自适应收缩字号**。
+     * 先按理想字号排版，放不进预留区就把字号乘一个收敛系数重排，
+     * 最多迭代 4 次。这样无论系统字体设多大，气泡都一定装得下、不会重叠。
+     */
     private fun drawBubble(
         canvas: Canvas,
         text: String,
@@ -333,20 +351,49 @@ class PetView(
         windowW: Float,
         areaH: Float
     ) {
-        val fm = bubbleTextPaint.fontMetrics
-        val lineH = (fm.descent - fm.ascent) + textSizePx * 0.15f
-        val maxTextW = (windowW - padPx * 2f - textSizePx).coerceAtLeast(textSizePx * 4f)
+        val idealSize = textSizePx
+        var size = idealSize
+        var lines: List<String>
+        var lineH: Float
+        var bh: Float
 
-        val lines = wrapText(text, maxTextW)
+        // 迭代收缩：直到气泡（含小尾巴）能装进预留区
+        var attempt = 0
+        while (true) {
+            bubbleTextPaint.textSize = size
+            val fm = bubbleTextPaint.fontMetrics
+            lineH = (fm.descent - fm.ascent) + size * 0.15f
+            val pad = size * 0.55f
+            val maxTextW = (windowW - pad * 2f - size).coerceAtLeast(size * 3f)
+            lines = wrapText(text, maxTextW)
+            bh = lines.size * lineH + pad * 0.9f
+            // 小尾巴占的高度
+            val tailH = size * 0.30f
+            if (bh + tailH + size * 0.2f <= areaH || attempt >= MAX_SHRINK_ATTEMPTS) break
+            size *= 0.86f
+            attempt++
+        }
+
+        // 用最终字号重算一遍所有派生尺寸（循环里 last 的值可能与最终 size 不同步）
+        bubbleTextPaint.textSize = size
+        val fm = bubbleTextPaint.fontMetrics
+        lineH = (fm.descent - fm.ascent) + size * 0.15f
+        val pad = size * 0.55f
+        val maxTextW = (windowW - pad * 2f - size).coerceAtLeast(size * 3f)
+        lines = wrapText(text, maxTextW)
         var textW = 0f
         for (l in lines) textW = maxOf(textW, bubbleTextPaint.measureText(l))
-        val bw = (textW + padPx * 2f).coerceAtMost(windowW - padPx)
-        val bh = lines.size * lineH + padPx * 0.9f
+        val bw = (textW + pad * 2f).coerceAtMost(windowW - pad)
+        bh = lines.size * lineH + pad * 0.9f
 
-        // 气泡底边不能盖住角色头顶，最多占满预留区
-        val by = (areaH - bh - textSizePx * 0.6f).coerceAtLeast(0f)
+        // 垂直位置：底部贴住宠物头顶上方，且**不允许超出预留区上边界**
+        val gap = size * 0.30f
+        val by = (areaH - bh - gap).coerceIn(0f, (areaH - bh).coerceAtLeast(0f))
         val bx = (windowW - bw) / 2f
         val rect = RectF(bx, by, bx + bw, by + bh)
+
+        // 气泡圆角随字号走，避免小字号时圆角过大显得臃肿
+        val corner = size * 0.75f
 
         if (inner) {
             bubbleBgPaint.color = Color.argb(235, 232, 232, 238)
@@ -358,22 +405,28 @@ class PetView(
             bubbleTextPaint.typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
         }
 
-        canvas.drawRoundRect(rect, cornerPx, cornerPx, bubbleBgPaint)
+        canvas.drawRoundRect(rect, corner, corner, bubbleBgPaint)
 
-        // 小尾巴
-        val tailX = windowW / 2f
-        tailPath.reset()
-        tailPath.moveTo(tailX, rect.bottom)
-        tailPath.lineTo(tailX - textSizePx * 0.22f, rect.bottom + textSizePx * 0.30f)
-        tailPath.lineTo(tailX + textSizePx * 0.22f, rect.bottom + textSizePx * 0.30f)
-        tailPath.close()
-        canvas.drawPath(tailPath, bubbleBgPaint)
+        // 小尾巴：从气泡底边指向宠物头顶，长度受剩余空间限制
+        val tailLen = minOf(size * 0.30f, (areaH - rect.bottom).coerceAtLeast(0f))
+        if (tailLen > 0f) {
+            val tailX = windowW / 2f
+            tailPath.reset()
+            tailPath.moveTo(tailX, rect.bottom)
+            tailPath.lineTo(tailX - size * 0.22f, rect.bottom + tailLen)
+            tailPath.lineTo(tailX + size * 0.22f, rect.bottom + tailLen)
+            tailPath.close()
+            canvas.drawPath(tailPath, bubbleBgPaint)
+        }
 
-        var ty = rect.top + padPx * 0.45f - fm.ascent
+        var ty = rect.top + pad * 0.45f - fm.ascent
         for (l in lines) {
             canvas.drawText(l, windowW / 2f, ty, bubbleTextPaint)
             ty += lineH
         }
+
+        // 复原字号，避免影响其它绘制路径（比如"心声"斜体气泡共用同一个 Paint）
+        bubbleTextPaint.textSize = idealSize
     }
 
     /**
@@ -400,5 +453,16 @@ class PetView(
     fun currentAspect(): Float {
         val b = curBmp ?: return 1f
         return if (b.height == 0) 1f else b.width.toFloat() / b.height
+    }
+
+    companion object {
+        /**
+         * 气泡放不下时最多收缩几次（v1.4.0）。
+         *
+         * 每次字号乘 0.86，4 次可降到原字号的约 55% ——
+         * 足以容纳系统字体放大到 200% 的极端情况。
+         * 设上限是为了避免极端情况下无限迭代。
+         */
+        private const val MAX_SHRINK_ATTEMPTS = 4
     }
 }

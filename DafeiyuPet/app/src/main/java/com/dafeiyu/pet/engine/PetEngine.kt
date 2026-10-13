@@ -222,10 +222,40 @@ class PetEngine(context: Context, private val density: Float = 2f) {
 
     // =============================== 尺寸 ===============================
 
+    /**
+     * 系统字体缩放系数（v1.4.0 新增）。
+     *
+     * **这是"文字重合"的根因。**
+     *
+     * 气泡字号一直是这么算的：
+     * ```
+     * bubbleReserve = petHeight * 0.34
+     * textSize      = bubbleReserve * 0.26
+     * ```
+     * 高度与字号互相绑定，但**完全没考虑系统字体缩放**。
+     *
+     * 而 Android 在 `Paint` 上会按 `fontScale` 放大字号 ——
+     * 用户把系统字体调成 125%（HyperOS 上很常见）后，实际文字比预留空间大 25%，
+     * 气泡里就装不下，直接溢出到宠物本体上。
+     *
+     * 修法：把预留高度按同一个系数放大，让"预留空间"和"实际文字"同步增长。
+     */
+    var fontScale: Float = 1f
+        private set
+
+    fun setFontScale(scale: Float) {
+        val s = scale.coerceIn(0.8f, 2.0f)
+        if (s == fontScale) return
+        fontScale = s
+        applySize()
+    }
+
     private fun applySize() {
         petHeight = (screenH * sizePercent / 100f).toInt().coerceAtLeast(MIN_PET_PX)
-        // 本体高度变了，气泡预留也要跟着变
-        bubbleReserve = (petHeight * 0.34f).toInt().coerceAtLeast(dp(44))
+        // 本体高度变了，气泡预留也要跟着变。
+        // 再乘 fontScale：字体放大后气泡必须同比变高，否则文字装不下会溢出重合。
+        bubbleReserve = ((petHeight * 0.34f) * fontScale).toInt()
+            .coerceAtLeast(dp(44))
         if (petWidth <= 0) petWidth = petHeight
     }
 

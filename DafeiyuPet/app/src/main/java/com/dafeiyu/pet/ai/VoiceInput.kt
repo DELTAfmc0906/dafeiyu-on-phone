@@ -106,6 +106,19 @@ class VoiceInput(private val context: Context) {
         runCatching { SpeechRecognizer.isRecognitionAvailable(context) }.getOrDefault(false)
 
     /**
+     * 当前系统默认的识别服务名（诊断用）。
+     *
+     * 实测价值：小米手机上只有一个标准 `RecognitionService`，
+     * 且它默认只走网络（日志 `useLocal=false`）。把这个名字显示出来，
+     * 用户和我都能立刻知道"到底是谁在处理语音"。
+     */
+    fun currentServiceName(): String = runCatching {
+        android.provider.Settings.Secure.getString(
+            context.contentResolver, "voice_recognition_service"
+        ).orEmpty()
+    }.getOrDefault("")
+
+    /**
      * 决定这次用哪个引擎。
      *
      * 优先离线：一来不受网络影响，二来延迟明显更低。
@@ -116,6 +129,34 @@ class VoiceInput(private val context: Context) {
         hasNetwork() -> Engine.NETWORK
         hasOnDevice() -> Engine.ON_DEVICE   // 在线不可用但离线可用
         else -> null
+    }
+
+    // =============================== 预热 ===============================
+
+    /**
+     * 预绑定识别服务（v1.4.0 新增，用于降低"卡"的感觉）。
+     *
+     * `SpeechRecognizer` 第一次 `startListening` 时要先绑定到识别服务、
+     * 建立连接 —— 这一步在按住说话时是**纯等待**，用户感觉就是"卡了一下"。
+     *
+     * 对话界面一打开就调这个，把绑定提前做掉；等用户真正按住时，
+     * 服务已经连着，`startListening` 几乎立即生效。
+     *
+     * 开销可控：只在需要时创建一次，并且不启动录音（不占麦克风、
+     * 不在状态栏显示录音指示）。
+     */
+    fun warmUp() {
+        val picked = pickEngine() ?: return
+        if (recognizer != null && engine == picked) return
+        main.post {
+            if (recognizer != null && engine == picked) return@post
+            runCatching {
+                releaseRecognizer()
+                recognizer = createRecognizer(picked)
+                engine = picked
+                lastEngine = picked
+            }
+        }
     }
 
     // =============================== 启动 ===============================
@@ -196,15 +237,20 @@ class VoiceInput(private val context: Context) {
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
 
             /*
-             * 静音超时调优。
+             * 静音超时。
              *
-             * 默认值偏短：用户说完一半停下来想一想，就会被判定"没听到声音"
-             * 而提前结束 —— 体感上很像"断连"。
-             * 这里给足思考时间，结束时机交给用户松手。
+             * 这里刻意**不设** EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS：
+             * 早期设成 60 秒想"别在用户思考时断掉"，但实测发现多数识别引擎
+             * 会把这个值当成"最长等待"，反而让**结果迟迟不回**，
+             * 用户松手后要等好几秒才出字 —— 体感就是"卡"。
+             *
+             * 现在由我们自己在松手时调 stopListening()，结束时机完全可控，
+             * 不需要靠超时值兜。只留一个较短的最小语音长度，避免把
+             * 咳嗽/杂音也当成一次输入。
              */
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 60000L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 800L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 600L)
+            // 让引擎尽快吐出中间结果，边说边出字更跟手
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
 
             // 设备端识别不支持语言偏好提示，设了也无害；在线识别用它提高准确率
             putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, useEngineIsOffline())

@@ -101,6 +101,9 @@ class PetService : Service(), PetEngine.Listener, PetView.GestureHost {
 
         // 首次启动先把尺寸算出来，再决定窗口大小
         engine.refreshScreenMetrics(this, 0, bottomInset())
+        // 把系统字体缩放告知引擎 —— 气泡预留高度要按同一系数放大，
+        // 否则用户调大系统字体后气泡文字会溢出重合（v1.4.0 修）
+        engine.setFontScale(resources.configuration.fontScale)
         engine.placeAtDefault()
         createOverlay()
 
@@ -145,6 +148,8 @@ class PetService : Service(), PetEngine.Listener, PetView.GestureHost {
             ACTION_RELOAD_CONFIG -> {
                 engine.mode = config.mode
                 engine.sizePercent = config.sizePercent
+                // 字体缩放可能在运行期间被系统改过，每次重载都同步一次
+                engine.setFontScale(resources.configuration.fontScale)
                 engine.setBatteryAlertEnabled(config.batteryAlert)
                 // AI 配置可能改了，重新载入历史
                 chatHistory = ChatHistoryStore(config)
@@ -286,15 +291,39 @@ class PetService : Service(), PetEngine.Listener, PetView.GestureHost {
         val lp = layoutParams ?: return
         val v = petView ?: return
 
-        // 触摸穿透。
-        // 额外规则（v1.2.2 修）：设置面板或 AI 对话界面在前台时，鱼必须穿透，
-        // 否则它的悬浮窗会盖住下层界面的控件。
-        val touchable = shouldBeTouchable() && !PetRuntime.chatVisible
+        /*
+         * 触摸穿透（v1.4.0 调整）。
+         *
+         * ## 为什么不再因为"对话界面打开"就强制穿透
+         *
+         * v1.2.2 起这里有一句 `shouldBeTouchable() && !PetRuntime.chatVisible`，
+         * 用意是防止鱼的悬浮窗盖住对话界面的控件。但那个前提**已经过时了**：
+         * 当时对话界面是画在鱼自己窗口里的一个面板，两者确实重叠；
+         * 现在对话界面是独立的 Activity 窗口（v1.2.2 重构的成果），鱼在上面
+         * 并不会挡住它 —— 系统会让后打开的 Activity 窗口浮在悬浮窗之上。
+         *
+         * 保留那句的代价却是实打实的：用户一打开对话，鱼就变成
+         * NOT_TOUCHABLE，而系统对"不可触摸且 alpha>0.8"的悬浮窗会
+         * **自动把 alpha 压到 0.8**（WindowManager 的行为），
+         * 于是鱼看起来变透明了，同时也点不动 —— 用户反馈的正是这个现象。
+         *
+         * 现在只在真正需要让路的时候穿透（用户关了可互动、或设置面板在前台）。
+         */
+        val touchable = shouldBeTouchable()
         lp.flags = if (touchable) {
             lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
         } else {
             lp.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         }
+
+        /*
+         * 显式设成不透明。
+         *
+         * 系统只对"NOT_TOUCHABLE 且 alpha > 0.8"的悬浮窗做压暗处理，
+         * 但某些 ROM（含 MIUI）会读到一个非 1.0 的默认值就动手。
+         * 明确写 1f，避免被误判。
+         */
+        lp.alpha = 1f
 
         // 焦点：鱼窗口**永远**保持 NOT_FOCUSABLE。
         //

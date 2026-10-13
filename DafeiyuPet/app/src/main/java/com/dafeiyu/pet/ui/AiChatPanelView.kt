@@ -170,6 +170,15 @@ class AiChatPanelView(
     /** 设备是否支持语音识别 */
     fun isVoiceAvailable(): Boolean = voice.isAvailable()
 
+    /**
+     * 预热语音识别（v1.4.0）。
+     * 由 ChatActivity 在 onResume 调用，把绑定识别服务的耗时提前做掉，
+     * 用户真正按住说话时就不用等这一步。
+     */
+    fun warmUpVoice() {
+        runCatching { voice.warmUp() }
+    }
+
     // =============================== 构建 ===============================
 
     private fun build() {
@@ -291,11 +300,12 @@ class AiChatPanelView(
         holdBtn = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER
-            // 椭圆：圆角 = 高度的一半
-            background = GradientDrawable().apply {
-                cornerRadius = dpf(26)
-                setColor(m3.secondaryContainer)
-            }
+            // 椭圆：圆角按实际高度一半计算（见 ovalBackground）
+            background = ovalBackground(m3.secondaryContainer)
+            // 高度用 minHeight + wrap_content 而不是写死 dp：
+            // 系统字体放大到 125% 时文字会变高，写死高度会导致文字被压出边界
+            minimumHeight = dp(52)
+            setPadding(dp(16), dp(10), dp(16), dp(10))
             addView(holdWave, LinearLayout.LayoutParams(dp(88), dp(26)).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 marginEnd = dp(8)
@@ -303,16 +313,10 @@ class AiChatPanelView(
             addView(holdLabel, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ))
-            /*
-             * 注意：**永远不要禁用这个按钮**。
-             *
-             * 上一版写成 `isEnabled = voice.isAvailable()`，本意是"设备不支持就置灰"。
-             * 但 Android 在 View `isEnabled == false` 时**不会把触摸事件派发给
-             * OnTouchListener**，而 uiautomator 仍会报 enabled=true ——
-             * 结果是按钮看起来正常、按下去毫无反应，极难排查。
-             *
-             * 正确做法：按钮始终可点，不支持时在按下那一刻给出明确提示。
-             */
+            // 布局完成后按真实高度重算圆角，保证是正椭圆
+            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                if (!recording) applyHoldButtonState()
+            }
         }
 
         // 文本输入行
@@ -362,8 +366,10 @@ class AiChatPanelView(
         })
         addView(inputRow, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
 
+        // 高度交给 holdBtn 自己（minHeight + wrap_content），
+        // 这样系统字体放大时按钮能跟着变高，不会把文字压出边界
         voiceRow.addView(holdBtn, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(52)
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply {
             marginStart = dp(8)
             marginEnd = dp(8)
@@ -376,9 +382,15 @@ class AiChatPanelView(
 
     // =============================== 语音输入（按住说话）===============================
 
-    /** 把椭圆条的圆角重设一遍（背景被替换后圆角会丢） */
+    /**
+     * 把椭圆条的圆角重设一遍（背景被替换后圆角会丢）。
+     *
+     * v1.4.0：圆角改成**按实际高度的一半**动态计算，而不是写死 26dp。
+     * 因为「按住 说话」的高度改为 minHeight + wrap_content（适应系统字体缩放），
+     * 高度会变，写死的圆角就不再是正椭圆了。
+     */
     private fun ovalBackground(color: Int) = GradientDrawable().apply {
-        cornerRadius = dpf(26)
+        cornerRadius = (holdBtn.height / 2f).coerceAtLeast(dpf(24))
         setColor(color)
     }
 

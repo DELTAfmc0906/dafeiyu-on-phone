@@ -247,6 +247,9 @@ class ChatActivity : AppCompatActivity() {
         super.onResume()
         PetRuntime.chatVisible = true
         PetService.refreshTouchable(this)
+        // 预热语音识别：把"绑定识别服务"的耗时提前做掉，
+        // 用户真正按住说话时就不用等这一步了（v1.4.0 降延迟）
+        panel?.warmUpVoice()
     }
 
     override fun onDestroy() {

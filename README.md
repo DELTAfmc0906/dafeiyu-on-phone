@@ -8,7 +8,8 @@
 
 | 版本 | 说明 | 文件 |
 |---|---|---|
-| **v1.3.3**（推荐） | **修复按住说话波浪图松手后漂浮**（悬浮窗泄漏）；新增应用级心跳回收兜底 | `dist\dafeiyu-pet-v1.3.3-release.apk` |
+| **v1.4.0**（推荐） | **修复文字重合**（适配系统字体缩放）；**修复对话打开时桌宠透明+失去响应**；语音预热降延迟 | `dist\dafeiyu-pet-v1.4.0-release.apk` |
+| v1.3.3 | 修复按住说话波浪图松手后漂浮（悬浮窗泄漏） | `dist\dafeiyu-pet-v1.3.3-release.apk` |
 | v1.3.2 | 语音识别改用设备端离线通道（不联网、不断连、延迟低） | `dist\dafeiyu-pet-v1.3.2-release.apk` |
 | v1.3.1 | Material You 3 重做两个界面；按住说话重做为椭圆条；AI 设置独立成页 | `dist\dafeiyu-pet-v1.3.1-release.apk` |
 | v1.2.5 | AI 去掉全部人设与字数限制（原汁原味大模型） | `dist\dafeiyu-pet-v1.2.5-release.apk` |
@@ -33,7 +34,7 @@ App 内「设置 → 更新」可检查新版本并跳转下载。
 
 ### 1. 安装 APK
 
-把 `dist\dafeiyu-pet-v1.3.3-release.apk` 拷到手机，点击安装。
+把 `dist\dafeiyu-pet-v1.4.0-release.apk` 拷到手机，点击安装。
 （首次安装需在系统里允许"安装未知来源应用"。）
 
 也可以直接从 GitHub Release 下载：

@@ -33,8 +33,8 @@ android {
         applicationId = "com.dafeiyu.pet"
         minSdk = 26          // 悬浮窗 + 前台服务在 8.0 起才规范
         targetSdk = 36
-        versionCode = 12
-        versionName = "1.3.3"
+        versionCode = 14
+        versionName = "1.4.0"
     }
 
     signingConfigs {
