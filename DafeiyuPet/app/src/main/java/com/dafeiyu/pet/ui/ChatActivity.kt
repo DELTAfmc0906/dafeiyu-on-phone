@@ -233,8 +233,12 @@ class ChatActivity : AppCompatActivity() {
     override fun onPause() {
         PetRuntime.chatVisible = false
         // 切后台时把语音浮层和录音一起收掉。
-        // 悬浮窗不随 Activity 隐藏，漏收就会停在屏幕上（上一版的 bug）。
+        // 悬浮窗不随 Activity 隐藏，漏收就会停在屏幕上。
         panel?.cancelVoice()
+        // 额外保险：无论面板状态如何，把所有还活着的浮层全扫一遍清掉。
+        // 这是针对"浮层永久漂浮"的结构性兜底 —— 即使某个引用路径漏了，
+        // 登记表里也还找得到。
+        VoiceOverlay.sweepAll()
         PetService.refreshTouchable(this)
         super.onPause()
     }
@@ -250,6 +254,8 @@ class ChatActivity : AppCompatActivity() {
         // 必须释放麦克风，否则会一直占着录音设备
         panel?.release()
         panel = null
+        // 对话界面没了，浮层更不该留着
+        VoiceOverlay.sweepAll()
         super.onDestroy()
     }
 

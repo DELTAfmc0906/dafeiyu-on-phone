@@ -489,6 +489,18 @@ class AiChatPanelView(
         setStatus("")
         applyHoldButtonState(recording = true)
 
+        /*
+         * 先把上一轮的浮层收干净再建新的。
+         *
+         * 这里是另一条泄漏路径：如果用户在上一轮没结束时又按下（快速连按），
+         * `voiceOverlay = VoiceOverlay(...)` 会**直接覆盖旧引用** ——
+         * 旧浮层就再也没人能引用到它了，永久留在屏幕上。
+         */
+        voiceOverlay?.let {
+            runCatching { it.dismiss() }
+        }
+        voiceOverlay = null
+
         // 弹出浮层（波形 + 实时文字 + 上滑取消提示）
         voiceOverlay = VoiceOverlay(context).also { it.show() }
         startWaveDrive()

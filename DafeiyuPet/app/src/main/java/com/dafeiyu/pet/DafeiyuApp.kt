@@ -2,6 +2,7 @@ package com.dafeiyu.pet
 
 import android.app.Application
 import android.os.Build
+import com.dafeiyu.pet.ui.VoiceOverlay
 import com.google.android.material.color.DynamicColors
 
 /**
@@ -34,5 +35,14 @@ class DafeiyuApp : Application() {
             // 传 true 才能覆盖我们自己的 Theme.DafeiyuPet。
             DynamicColors.applyToActivitiesIfAvailable(this)
         }
+
+        /*
+         * 启动语音浮层的心跳回收（v1.3.3）。
+         *
+         * 放在 Application 而不是某个 Activity：悬浮窗的残留与界面生命周期
+         * 无关，对话界面可能早就销毁了，浮层还挂在屏幕上。心跳跑在应用进程里，
+         * 只要进程活着就能把它收掉 —— 这是"永久漂浮"的最后一道保险。
+         */
+        VoiceOverlay.startJanitor()
     }
 }

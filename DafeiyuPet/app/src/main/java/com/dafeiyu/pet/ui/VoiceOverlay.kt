@@ -67,10 +67,104 @@ class VoiceOverlay(private val context: Context) {
         private const val MIN_DURATION_MS = 600L
 
         /**
-         * 兜底：无论如何最多显示这么久。
-         * 防止任何未知异常路径让浮层滞留。
+         * 兜底：无论如何最多显示这么久（v1.3.3 从 20 秒收紧到 12 秒）。
+         * 用户能感知到"东西挂在屏幕上"，20 秒太久了。
          */
-        private const val SAFETY_TIMEOUT_MS = 20_000L
+        private const val SAFETY_TIMEOUT_MS = 12_000L
+
+        /**
+         * 活着的浮层登记表 —— **本版修复泄漏的核心**。
+         *
+         * ## 之前为什么会永久漂浮
+         *
+         * 旧代码有两处致命问题：
+         *
+         * ```kotlin
+         * runCatching { windowManager.addView(column, params) }  // 失败被静默吞掉
+         * root = column                                          // 却无条件赋值
+         * ```
+         * ```kotlin
+         * fun dismiss() {
+         *     main.removeCallbacks(safetyDismiss)   // ← 一进来就取消了兜底
+         *     val v = root ?: return
+         *     root = null                           // ← 先清引用
+         *     runCatching { windowManager.removeView(v) }  // 失败又被吞掉
+         * }
+         * ```
+         *
+         * 结果：真机上只要 `removeView` 失败一次（MIUI 等 ROM 对悬浮窗管控更严，
+         * 或视图根本没成功 attach），**屏幕上的视图就再没有任何引用能操作它**，
+         * 同时兜底定时器已被自己取消 —— 于是永久漂浮，只能杀进程。
+         *
+         * ## 现在的做法
+         *
+         * 每个创建出来的浮层都登记在这里，**在确认从 WindowManager 摘除之前
+         * 绝不解除登记**。这样即使某次 `removeView` 失败，也还有人（[sweepAll]）
+         * 持有引用并能继续重试。
+         */
+        private val live = java.util.Collections.synchronizedList(mutableListOf<VoiceOverlay>())
+
+        /** 回收所有还活着的浮层。任何"界面已经该关掉"的时机都可以调，幂等。 */
+        fun sweepAll() {
+            val snapshot = synchronized(live) { live.toList() }
+            snapshot.forEach { runCatching { it.forceRemove() } }
+        }
+
+        /**
+         * 心跳回收 —— 泄漏的**最后一道保险**。
+         *
+         * 逐个检查登记表里的浮层：
+         *   - 已经过了展示期（超时兜底）→ 尝试摘除
+         *   - 处于"摘除失败"状态 → 用更强的清理再试
+         *   - 无论如何都清不掉的（连续失败超过 [HARD_KILL_MS]）→
+         *     直接从登记表移除并放弃，避免无限重试耗电
+         *
+         * 正常情况下这个心跳什么都不用做（登记表是空的）。
+         */
+        fun sweepStale(nowMs: Long) {
+            val snapshot = synchronized(live) { live.toList() }
+            for (o in snapshot) {
+                val age = nowMs - o.createdAt
+                if (age < SAFETY_TIMEOUT_MS) continue
+                val stuckFor = o.dismissRequestedAt?.let { nowMs - it }
+                if (stuckFor != null && stuckFor > HARD_KILL_MS) {
+                    // 连续失败太久，放弃重试（极端情况下的自我保护）
+                    o.unregister()
+                    continue
+                }
+                runCatching { o.forceRemove() }
+            }
+        }
+
+        /**
+         * 启动心跳。
+         *
+         * 由 [com.dafeiyu.pet.DafeiyuApp] 在应用启动时调用一次即可，
+         * 与任何界面生命周期解耦 —— 这样即使对话界面已经销毁，
+         * 遗留的浮层依然会被回收。
+         */
+        fun startJanitor() {
+            if (janitorStarted) return
+            janitorStarted = true
+            val handler = android.os.Handler(android.os.Looper.getMainLooper())
+            val tick = object : Runnable {
+                override fun run() {
+                    runCatching { sweepStale(System.currentTimeMillis()) }
+                    handler.postDelayed(this, JANITOR_INTERVAL_MS)
+                }
+            }
+            handler.postDelayed(tick, JANITOR_INTERVAL_MS)
+        }
+
+        /** 当前还挂着几个浮层（诊断用） */
+        fun liveCount(): Int = synchronized(live) { live.size }
+
+        /** 摘除失败后最多再重试这么久，超过就放弃（防无限重试） */
+        private const val HARD_KILL_MS = 5_000L
+        private const val JANITOR_INTERVAL_MS = 1_500L
+
+        @Volatile
+        private var janitorStarted = false
     }
 
     private val density = context.resources.displayMetrics.density
@@ -91,6 +185,16 @@ class VoiceOverlay(private val context: Context) {
 
     private var cancelling = false
     private var startedAt = 0L
+
+    /** 创建时刻，供心跳判断是否超过展示期 */
+    private val createdAt = System.currentTimeMillis()
+
+    /**
+     * 首次请求摘除的时刻。
+     * 非 null 表示"叫过 dismiss 但没摘掉"，心跳会据此加重清理，
+     * 并在持续失败过久后放弃重试。
+     */
+    private var dismissRequestedAt: Long? = null
 
     /** 当前真实音量（0..1），由 onRmsChanged 更新 */
     private var realLevel = 0f
@@ -174,8 +278,18 @@ class VoiceOverlay(private val context: Context) {
             gravity = Gravity.CENTER
         }
 
-        runCatching { windowManager.addView(column, params) }
+        // 先解除上一轮可能残留的浮层，避免一次失误累积成两个
+        runCatching { forceRemove() }
+
+        val added = runCatching { windowManager.addView(column, params) }.isSuccess
+        if (!added) {
+            // addView 失败就**不要**把它当成已显示 —— 旧代码在这里无条件赋值，
+            // 导致 root 指向一个从未 attach 的视图，后续 removeView 必然失败。
+            root = null
+            return
+        }
         root = column
+        synchronized(live) { live.add(this) }
 
         // 兜底：任何异常路径都不该让浮层无限滞留
         main.postDelayed(safetyDismiss, SAFETY_TIMEOUT_MS)
@@ -263,20 +377,64 @@ class VoiceOverlay(private val context: Context) {
     }
 
     /**
-     * 立即移除浮层。**幂等**，可以随便多调几次。
-     * 只要调用，浮层必定消失 —— 这是上一版缺失的保证。
+     * 立即移除浮层并解除登记。**幂等**，可以随便多调几次。
+     *
+     * 注意顺序：旧代码是"先取消兜底、再清引用、最后 runCatching 吞掉失败"，
+     * 三处叠加导致失败后彻底失去引用。现在改成**先尝试摘除，成功才解除登记**；
+     * 失败则保留引用并短路重试，保证还有机会补救。
      */
     fun dismiss() {
+        forceRemove()
+    }
+
+    /**
+     * 从 WindowManager 摘除视图。
+     *
+     * 只有**确认摘除成功**（或视图本就不在）才清空 [root] 并从 [live] 解除登记。
+     * 摘除失败时保留引用 —— 调用方（[sweepAll]）稍后还能再试。
+     */
+    internal fun forceRemove() {
+        // 定时器在任何路径下都要取消，避免重复回调
         main.removeCallbacks(safetyDismiss)
         main.removeCallbacks(dismissSoonRunnable)
-        val v = root ?: return
+
+        val v = root
+        if (v == null) {
+            unregister()
+            return
+        }
+
+        // 记录"已请求摘除"，心跳据此判断是否卡住
+        if (dismissRequestedAt == null) dismissRequestedAt = System.currentTimeMillis()
+
+        val removed = runCatching { windowManager.removeView(v) }.isSuccess
+        if (!removed) {
+            // 普通 removeView 失败时用 removeViewImmediate 再试一次：
+            // 某些 ROM 在视图有未完成的动画/布局事务时会拒绝普通摘除
+            val immediate = runCatching { windowManager.removeViewImmediate(v) }.isSuccess
+            if (!immediate) {
+                // 两次都失败：**保留 root 与登记**，留给 sweepAll / 兜底再试
+                // 但仍先把 UI 引用清掉，避免继续往看不见的视图上写字
+                wave = null
+                hintText = null
+                resultText = null
+                cancelling = false
+                realLevel = 0f
+                return
+            }
+        }
+
         root = null
-        runCatching { windowManager.removeView(v) }
         wave = null
         hintText = null
         resultText = null
         cancelling = false
         realLevel = 0f
+        unregister()
+    }
+
+    private fun unregister() {
+        synchronized(live) { live.remove(this) }
     }
 
     private val dismissSoonRunnable = Runnable { dismiss() }
