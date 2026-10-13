@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 启动图标前景：一只简化的小鲸鱼 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 身体 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M30,56 C30,44 40,36 52,36 C62,36 70,42 74,50 L84,42 L80,58 L84,72 L74,64 C70,72 62,78 52,78 C40,78 30,68 30,56 Z" />
+    <!-- 眼睛 -->
+    <path
+        android:fillColor="#1565C0"
+        android:pathData="M46,52 m-4,0 a4,4 0 1,0 8,0 a4,4 0 1,0 -8,0" />
+    <!-- 腹部高光 -->
+    <path
+        android:fillColor="#BBDEFB"
+        android:pathData="M38,62 C42,70 48,74 54,74 C60,74 66,70 70,62 C64,66 44,66 38,62 Z" />
+</vector>

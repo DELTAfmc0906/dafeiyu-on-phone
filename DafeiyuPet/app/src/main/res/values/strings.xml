@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">大肥鱼桌宠</string>
+
+    <!-- 设置面板 -->
+    <string name="settings_title">大肥鱼设置</string>
+    <string name="sec_start">启动与权限</string>
+    <string name="sec_mode">模式</string>
+    <string name="sec_size">大小</string>
+    <string name="sec_misc">其它</string>
+    <string name="sec_ai">AI 对话（长按鱼身唤醒）</string>
+
+    <string name="ai_enabled">启用 AI 对话</string>
+    <string name="ai_preset">接口预设</string>
+    <string name="ai_key">API Key</string>
+    <string name="ai_key_hint">sk-…（DeepSeek 平台上申请）</string>
+    <string name="ai_base_url">接口地址（Base URL）</string>
+    <string name="ai_base_url_hint">https://api.deepseek.com/v1</string>
+    <string name="ai_model">模型名</string>
+    <string name="ai_model_hint">deepseek-flash</string>
+    <string name="ai_save">保存 AI 设置</string>
+    <string name="ai_test">测试连接</string>
+    <string name="ai_clear_history">清空对话记录</string>
+    <string name="ai_hint_deepseek">DeepSeek 预设已自动填好地址和模型，只需填 Key。</string>
+    <string name="ai_hint_custom">填任意 OpenAI 兼容服务的地址与模型（通义/智谱/Kimi/本地 ollama 等）。</string>
+    <string name="ai_history_count">当前对话记录：%1$d 条（最多保留 40 条）</string>
+
+    <string name="grant_overlay">授予悬浮窗权限</string>
+    <string name="grant_overlay_done">悬浮窗权限已授予 ✓</string>
+    <string name="grant_notify">授予通知权限</string>
+    <string name="start_pet">启动桌宠</string>
+    <string name="stop_pet">停止桌宠</string>
+    <string name="pet_running">桌宠运行中</string>
+    <string name="pet_stopped">桌宠未运行</string>
+    <string name="need_overlay">请先授予悬浮窗权限，否则鱼出不来</string>
+
+    <string name="mode_wander">自由散步</string>
+    <string name="mode_follow">跟随手指</string>
+    <string name="mode_still">原地待着</string>
+
+    <string name="size_small">小 10%</string>
+    <string name="size_medium">中 20%</string>
+    <string name="size_large">大 34%</string>
+    <string name="size_current">当前大小：占屏幕高度 %1$d%%</string>
+    <string name="size_hint">拖动滑杆自由调节（8%~50%）。嫌挡事就拉到 10% 左右。</string>
+
+    <string name="opt_interactive">可互动（关掉后摸不到它）</string>
+    <string name="opt_battery">低电量提醒</string>
+    <string name="opt_autostart">开机自启</string>
+    <string name="city_label">天气城市</string>
+    <string name="city_hint">例如：汕头</string>
+    <string name="check_weather">查看天气</string>
+    <string name="about">关于</string>
+    <string name="about_text">大肥鱼桌宠 Android 版\n从 Python/PySide6 版移植\n三视图素材来自原项目</string>
+
+    <!-- 通知 -->
+    <string name="notif_channel_name">桌宠常驻</string>
+    <string name="notif_channel_desc">保持大肥鱼显示在屏幕上</string>
+    <string name="notif_title">大肥鱼在陪着你</string>
+    <string name="notif_text">点此打开设置；用下方按钮控制</string>
+    <string name="notif_action_settings">设置</string>
+    <string name="notif_action_toggle_touch">切换可互动</string>
+    <string name="notif_action_stop">收工</string>
+</resources>
