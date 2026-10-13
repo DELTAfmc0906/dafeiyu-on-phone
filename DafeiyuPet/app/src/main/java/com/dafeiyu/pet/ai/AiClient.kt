@@ -36,31 +36,26 @@ data class ChatMessage(val role: String, val content: String) {
 object AiClient {
 
     /**
-     * 回答风格（v1.2.4 新增，可在设置里切）。
+     * 回答长度约束（v1.2.5 起改为可选，默认**不加任何约束**）。
      *
-     * 之所以做成选项：用户对"该说多长"的期待差别很大 ——
-     * 有人只要桌宠那种俏皮短句，有人要正经答案。
-     * 把这个决定权交出去，比写死一个值好。
+     * 演进历史：
+     *   v1.2   硬编码原 Python 桌宠的"每句话不超过25字" —— 那是**桌宠气泡**的限制，
+     *          套在问答上导致回答被剁成短句，看起来像个玩具模型（实测 47 字 vs 150 字）
+     *   v1.2.4 改成三档可选（桌宠风/正常/详细），但仍默认带人设
+     *   v1.2.5 **默认完全不加约束、不加人设** —— 用户要"原汁原味的聪明大模型"
+     *
+     * 只保留一个可选的字数限制开关，给确实想让回答短一点的人用。
      */
-    enum class Style(val key: String, val label: String, val hint: String) {
-        /**
-         * 桌宠风：短句、俏皮，贴近原 Python 版的观感。
-         */
-        PET("pet", "桌宠风（短句俏皮）", "回答保持简短俏皮，不超过40字，像桌宠说话"),
+    enum class LengthLimit(val key: String, val label: String, val hint: String) {
+        /** 默认：不加任何系统提示词，模型以原生人格回答 */
+        NONE("none", "不限制（推荐）", ""),
 
-        /**
-         * 默认：正常作答，该说多少说多少。
-         */
-        NORMAL("normal", "正常（推荐）", ""),
-
-        /**
-         * 详细：要求分点、展开。
-         */
-        DETAILED("detailed", "详细（分点展开）", "回答请分点、充分展开，不要为了简短而省略关键信息");
+        /** 简短：限制 40 字内，接近桌宠气泡的观感 */
+        SHORT("short", "简短（40字内）", "回答保持简短，不超过40字。");
 
         companion object {
-            fun from(key: String?): Style =
-                entries.firstOrNull { it.key == key } ?: NORMAL
+            fun from(key: String?): LengthLimit =
+                entries.firstOrNull { it.key == key } ?: NONE
         }
     }
 
@@ -83,15 +78,22 @@ object AiClient {
     /** 对话历史上限，与原程序一致 */
     const val MAX_HISTORY = 40
 
-    /** 基础人设（不含长度约束，长度由 [Style] 追加） */
-    private const val PERSONA =
-        "你是「大肥鱼」，一只住在用户手机上的桌面宠物鲸鱼娘，性格贱兮兮但可爱，" +
-                "偶尔吐槽主人但不真骂人。不要自称AI或大模型，自然地以大肥鱼的身份说话。"
+    /**
+     * 基础人设。**v1.2.5 起默认为空串** —— 不加任何 system 提示词，
+     * 让模型以原生人格回答（用户明确要"原汁原味的聪明大模型"）。
+     * 仅在用户主动选择"简短"时，才追加一句长度约束。
+     */
+    private const val PERSONA = ""
 
-    /** 拼出最终的 system 提示词 */
-    fun buildSystemPrompt(style: Style): String {
-        val hint = style.hint
-        return if (hint.isEmpty()) PERSONA else "$PERSONA$hint。"
+    /**
+     * 拼出最终的 system 提示词。
+     *
+     * 返回空串时，请求里**不会带 system 消息** —— 这一点很重要：
+     * 带上一个空的 system 也可能影响模型行为，干脆整条不加。
+     */
+    fun buildSystemPrompt(limit: LengthLimit): String {
+        if (limit.hint.isEmpty()) return ""
+        return if (PERSONA.isEmpty()) limit.hint else "$PERSONA${limit.hint}"
     }
 
     private val io = Executors.newSingleThreadExecutor { r ->
@@ -147,9 +149,9 @@ object AiClient {
      * @param enableThinking 是否开启模型的思考（思维链）。
      *        开启后思考内容走 `onThinking`，正文走 `onDelta`；
      *        关闭可显著降低 token 消耗与延迟（实测响应体积差 50 倍）。
-     * @param style 回答风格，决定是否附加上字数/展开程度的约束。
-     *        默认 [Style.NORMAL]（不限制长度）—— 早期版本硬编码了
-     *        "每句话不超过25字"，那是桌宠气泡的限制，不该用在问答上。
+     * @param limit 长度约束。默认 [LengthLimit.NONE] —— **不附加任何 system 提示词**，
+     *        模型以原生人格回答。早期版本硬编码了"每句话不超过25字"（那是桌宠气泡
+     *        的限制），导致问答被剁成短句。
      */
     fun ask(
         baseUrl: String,
@@ -158,7 +160,7 @@ object AiClient {
         history: List<ChatMessage>,
         userText: String,
         enableThinking: Boolean = false,
-        style: Style = Style.NORMAL,
+        limit: LengthLimit = LengthLimit.NONE,
         callback: Callback
     ) {
         val endpoint = normalizeEndpoint(baseUrl)
@@ -179,7 +181,12 @@ object AiClient {
             var conn: HttpURLConnection? = null
             try {
                 val messages = JSONArray().apply {
-                    put(JSONObject().put("role", ChatMessage.ROLE_SYSTEM).put("content", buildSystemPrompt(style)))
+                    // 只有存在有效 system 提示词时才加这条消息。
+                    // 默认（不限制）时完全不加，保持调用的"原汁原味"。
+                    val sys = buildSystemPrompt(limit)
+                    if (sys.isNotEmpty()) {
+                        put(JSONObject().put("role", ChatMessage.ROLE_SYSTEM).put("content", sys))
+                    }
                     history.takeLast(MAX_HISTORY).forEach {
                         put(JSONObject().put("role", it.role).put("content", it.content))
                     }

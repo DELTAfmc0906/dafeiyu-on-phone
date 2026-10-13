@@ -8,8 +8,9 @@
 
 | 版本 | 说明 | 文件 |
 |---|---|---|
-| **v1.2.4**（推荐） | **修复 AI"只会说短句、显得很傻"**（移除了硬编码的 25 字限制）；新增**回答风格**与**模型**可选 | `dist\dafeiyu-pet-v1.2.4-release.apk` |
-| v1.2.3 | 修复 AI 回复 `nullnullnull...`；新增语音输入（按住说话） | `dist\dafeiyu-pet-v1.2.3-release.apk` |
+| **v1.2.5**（推荐） | **AI 去掉全部人设与字数限制**（原汁原味大模型）；**重做按住说话**（波形 + 边说边出字 + 上滑取消） | `dist\dafeiyu-pet-v1.2.5-release.apk` |
+| v1.2.4 | 修复 AI"只会说短句"（移除硬编码 25 字限制） | `dist\dafeiyu-pet-v1.2.5-release.apk` |
+| v1.2.3 | 修复 AI 回复 `nullnullnull...`；新增语音输入 | `dist\dafeiyu-pet-v1.2.3-release.apk` |
 | v1.2.2 | 修 AI 对话键盘打不进字、退出后全局触摸被吃（改用 Activity） | `dist\dafeiyu-pet-v1.2.2-release.apk` |
 | v1.2.1 | 新增 GitHub 更新检查 + 「打开 app 时鱼也保持可互动」开关 | `dist\大肥鱼桌宠-v1.2.1-release.apk` |
 | v1.2 | 新增 AI 对话（长按唤醒，Ask 模式） | `dist\大肥鱼桌宠-v1.2-release.apk` |
@@ -29,7 +30,7 @@ App 内「设置 → 更新」可检查新版本并跳转下载。
 
 ### 1. 安装 APK
 
-把 `dist\dafeiyu-pet-v1.2.4-release.apk` 拷到手机，点击安装。
+把 `dist\dafeiyu-pet-v1.2.5-release.apk` 拷到手机，点击安装。
 （首次安装需在系统里允许"安装未知来源应用"。）
 
 也可以直接从 GitHub Release 下载：

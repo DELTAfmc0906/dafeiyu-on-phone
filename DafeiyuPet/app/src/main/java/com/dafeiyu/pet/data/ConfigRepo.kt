@@ -242,14 +242,15 @@ class ConfigRepo(context: Context) {
         set(v) = sp.edit().putBoolean(KEY_VOICE_AUTO_SEND, v).apply()
 
     /**
-     * 回答风格（v1.2.4 新增）。
+     * 回答长度约束（v1.2.4 新增，v1.2.5 起默认「不限制」）。
      *
      * 早期版本把原 Python 桌宠的"每句话不超过25字"硬编码进系统提示词，
-     * 结果问答被截成短句、看起来很傻。现在把长度决定权交给用户。
+     * 结果问答被截成短句、看起来很傻。现在默认**完全不加提示词**，
+     * 让模型以原生人格回答。
      */
-    var aiStyle: com.dafeiyu.pet.ai.AiClient.Style
-        get() = com.dafeiyu.pet.ai.AiClient.Style.from(sp.getString(KEY_AI_STYLE, null))
-        set(v) = sp.edit().putString(KEY_AI_STYLE, v.key).apply()
+    var aiLengthLimit: com.dafeiyu.pet.ai.AiClient.LengthLimit
+        get() = com.dafeiyu.pet.ai.AiClient.LengthLimit.from(sp.getString(KEY_AI_LENGTH, null))
+        set(v) = sp.edit().putString(KEY_AI_LENGTH, v.key).apply()
 
     /** 配置是否可用（有 Key 才算配好） */
     fun isAiConfigured(): Boolean = apiKey.isNotBlank()
@@ -301,7 +302,7 @@ class ConfigRepo(context: Context) {
         const val KEY_AI_ENABLED = "ai_enabled"
         const val KEY_AI_THINKING = "ai_thinking"
         const val KEY_VOICE_AUTO_SEND = "voice_auto_send"
-        const val KEY_AI_STYLE = "ai_style"
+        const val KEY_AI_LENGTH = "ai_length_limit"
         const val DEFAULT_CITY = "汕头"
     }
 }

@@ -76,6 +76,8 @@ class AiChatPanelView(
     // ---- 语音 ----
     private lateinit var voice: VoiceInput
     private var recording = false
+    private var voiceOverlay: VoiceOverlay? = null
+    private var holdStartY = 0f
 
     /** 供 Activity 在窗口获得焦点后调用，拉起输入法 */
     fun inputView(): EditText = input
@@ -92,6 +94,8 @@ class AiChatPanelView(
     /** 界面销毁时必须调用，否则麦克风不释放 */
     fun release() {
         runCatching { voice.release() }
+        voiceOverlay?.dismiss()
+        voiceOverlay = null
     }
 
     /** 录音权限回来后的回调（Activity 转发） */
@@ -240,8 +244,12 @@ class AiChatPanelView(
      * 按住说话。
      *
      * [SpeechRecognizer] 没有"只在按住期间录音"的接口，这里用组合模拟：
-     *   按下 -> startListening；松开 -> stopListening（立刻结束并取回结果）
-     * 配合 partial results，边说边能看到文字。
+     *   按下 -> 弹浮层 + startListening
+     *   上滑 -> 浮层进入取消态
+     *   松开 -> stopListening（立刻结束并取回结果）
+     *
+     * 交互细节参考主流做法（DeepSeek 官方 App 1.6.3 起支持按住说话）：
+     * 浮层边说边出字、波形跟随音量、上滑取消。
      */
     @SuppressLint("ClickableViewAccessibility")
     private fun attachHoldToTalk() {
@@ -259,15 +267,26 @@ class AiChatPanelView(
                             ?: setStatus("没有麦克风权限")
                         true
                     } else {
+                        holdStartY = e.rawY
                         startRecording()
                         true
                     }
                 }
+
+                MotionEvent.ACTION_MOVE -> {
+                    if (recording) {
+                        // 上滑超过阈值即进入取消态（浮层会变红提示）
+                        voiceOverlay?.onDrag(e.rawY - holdStartY)
+                    }
+                    true
+                }
+
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (recording) stopRecording()
                     v.performClick()
                     true
                 }
+
                 else -> false
             }
         }
@@ -277,42 +296,73 @@ class AiChatPanelView(
         recording = true
         micBtn.background = micCircle(Color.parseColor("#FFCDD2"))
         micBtn.text = "🔴"
-        setStatus("正在听…松开结束")
+        setStatus("")
+
+        // 弹出浮层（波形 + 实时文字 + 上滑取消提示）
+        voiceOverlay = VoiceOverlay(context).also { it.show() }
+        startWaveIdlePulse()
+
         voice.start(object : VoiceInput.Listener {
-            override fun onReady() {}
+            override fun onReady() {
+                voiceOverlay?.setText("请开始说话…")
+            }
 
             override fun onPartial(text: String) {
-                // 中间结果实时填进输入框，用户能看到自己说的话
+                // 边说边出字：浮层实时显示，同时填进输入框
+                voiceOverlay?.setText(text)
                 input.setText(text)
                 input.setSelection(text.length)
             }
 
+            override fun onLevel(level: Float) {
+                voiceOverlay?.setLevel(level)
+            }
+
             override fun onResult(text: String) {
+                voiceOverlay?.setText(text)
                 input.setText(text)
                 input.setSelection(text.length)
                 setStatus("")
                 if (voiceAutoSend) {
-                    // 稍等一下让用户看到识别结果再发送
-                    postDelayed({ if (input.text.toString().isNotBlank()) doSend() }, 220L)
+                    postDelayed({ if (input.text.toString().isNotBlank()) doSend() }, 260L)
                 }
             }
 
             override fun onError(message: String) {
-                setStatus(message)
+                // 取消是用户主动行为，不该弹错误
+                if (voiceOverlay?.isCancelling == true) {
+                    setStatus("")
+                } else {
+                    setStatus(message)
+                }
             }
 
             override fun onFinished() {
                 recording = false
                 micBtn.background = micCircle(Color.parseColor("#E8EAF6"))
                 micBtn.text = "🎤"
+                voiceOverlay?.dismiss()
+                voiceOverlay = null
             }
         })
     }
 
     private fun stopRecording() {
         recording = false
+        stopWaveIdlePulse()
         micBtn.background = micCircle(Color.parseColor("#E8EAF6"))
         micBtn.text = "🎤"
+        // 先问浮层：是取消/太短，还是正常结束
+        val overlay = voiceOverlay
+        if (overlay != null && overlay.isCancelling) {
+            // 取消：丢掉这次识别
+            voice.release()
+            overlay.dismiss()
+            voiceOverlay = null
+            setStatus("已取消")
+            return
+        }
+        overlay?.release()
         voice.stop()
     }
 
@@ -323,6 +373,29 @@ class AiChatPanelView(
         }
         statusText.text = msg
         statusText.visibility = VISIBLE
+    }
+
+    /**
+     * 静音时让波形轻微起伏。
+     *
+     * 不加这个的话，用户一停顿波形就完全静止，看起来像卡死了。
+     * `SpeechRecognizer.onRmsChanged` 只在有声时频繁回调。
+     */
+    private val wavePulse = object : Runnable {
+        override fun run() {
+            if (!recording) return
+            voiceOverlay?.idlePulse()
+            postDelayed(this, 120L)
+        }
+    }
+
+    private fun startWaveIdlePulse() {
+        removeCallbacks(wavePulse)
+        postDelayed(wavePulse, 120L)
+    }
+
+    private fun stopWaveIdlePulse() {
+        removeCallbacks(wavePulse)
     }
 
     // =============================== 消息渲染 ===============================
